@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.button.MaterialButtonToggleGroup xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/viewModeToggle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_gravity="end"
+    android:layout_marginTop="8dp" android:layout_marginBottom="4dp" app:singleSelection="true" app:selectionRequired="true">
+    <com.google.android.material.button.MaterialButton android:id="@+id/btnViewList" style="@style/Widget.Material3.Button.OutlinedButton" android:layout_width="wrap_content" android:layout_height="40dp" android:text="Danh sách" android:textSize="12sp" app:icon="@drawable/ic_view_list" app:iconPadding="5dp" app:iconGravity="textStart" />
+    <com.google.android.material.button.MaterialButton android:id="@+id/btnViewGrid" style="@style/Widget.Material3.Button.OutlinedButton" android:layout_width="wrap_content" android:layout_height="40dp" android:text="Lưới" android:textSize="12sp" app:icon="@drawable/ic_view_grid" app:iconPadding="5dp" app:iconGravity="textStart" />
+</com.google.android.material.button.MaterialButtonToggleGroup>

@@ -1,0 +1,7 @@
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@+id/nav_services" android:title="Dịch vụ" android:icon="@drawable/ic_nav_services"/>
+    <item android:id="@+id/nav_booking" android:title="Đặt lịch" android:icon="@drawable/ic_nav_booking"/>
+    <item android:id="@+id/nav_shop" android:title="Cửa hàng" android:icon="@drawable/ic_nav_shop"/>
+    <item android:id="@+id/nav_more" android:title="Khác" android:icon="@drawable/ic_nav_more"/>
+    <item android:id="@+id/nav_profile" android:title="Cá nhân" android:icon="@drawable/ic_nav_profile"/>
+</menu>

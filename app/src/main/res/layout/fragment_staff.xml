@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:padding="16dp" android:background="#F5F1E9">
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Quản lý cửa hàng" android:textColor="#241B18" android:textSize="25sp" android:textStyle="bold" />
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Cập nhật lịch hẹn, đơn hàng và thanh toán." android:textColor="#766B62" android:textSize="14sp" android:layout_marginTop="3dp" android:layout_marginBottom="12dp" />
+    <com.google.android.material.button.MaterialButtonToggleGroup android:id="@+id/staffTabs" android:layout_width="match_parent" android:layout_height="wrap_content" app:singleSelection="true" app:selectionRequired="true" xmlns:app="http://schemas.android.com/apk/res-auto">
+        <com.google.android.material.button.MaterialButton android:id="@+id/tabAppointments" style="@style/Widget.Material3.Button.OutlinedButton" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Lịch hẹn" />
+        <com.google.android.material.button.MaterialButton android:id="@+id/tabOrders" style="@style/Widget.Material3.Button.OutlinedButton" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Đơn hàng" />
+    </com.google.android.material.button.MaterialButtonToggleGroup>
+    <TextView android:id="@+id/tvStaffEmpty" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:gravity="center" android:text="Đang tải…" android:textColor="#766B62" android:textSize="16sp" android:visibility="gone" />
+    <androidx.recyclerview.widget.RecyclerView android:id="@+id/rvStaff" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:clipToPadding="false" android:paddingTop="8dp" />
+    <com.google.android.material.button.MaterialButton android:id="@+id/btnRefreshStaff" style="@style/Widget.Material3.Button.TonalButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Làm mới" />
+</LinearLayout>

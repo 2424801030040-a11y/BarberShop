@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#201815">
+  <title>Quản trị · Chí Phèo BarberShop</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main id="loginView" class="login-shell" hidden>
+    <form id="loginForm" class="login-card">
+      <div class="brand-mark">CP</div>
+      <p class="eyebrow">CHÍ PHÈO BARBERSHOP</p>
+      <h1>Quản trị cửa hàng</h1>
+      <p class="muted">Đăng nhập bằng tài khoản quản trị đã được cấp quyền.</p>
+      <label>Email<input id="loginEmail" type="email" autocomplete="username" required></label>
+      <label>Mật khẩu<input id="loginPassword" type="password" autocomplete="current-password" required></label>
+      <button class="button primary wide" type="submit">Đăng nhập</button>
+      <button id="googleSignInButton" class="button secondary wide" type="button">Tiếp tục với Google</button>
+      <p id="loginError" class="error" role="alert"></p>
+    </form>
+  </main>
+
+  <main id="deniedView" class="login-shell" hidden>
+    <section class="login-card">
+      <div class="brand-mark">CP</div><p class="eyebrow">TRUY CẬP BỊ TỪ CHỐI</p>
+      <h1>Tài khoản chưa có quyền quản trị</h1>
+      <p class="muted">Hãy yêu cầu chủ dự án cấp quyền admin cho tài khoản này.</p>
+      <button id="deniedSignOut" class="button secondary wide">Đăng xuất</button>
+    </section>
+  </main>
+
+  <div id="appView" class="app-shell" hidden>
+    <aside class="sidebar">
+      <div class="brand"><div class="brand-mark small">CP</div><div><b>CHÍ PHÈO</b><small>BARBERSHOP ADMIN</small></div></div>
+      <nav id="nav" aria-label="Điều hướng quản trị">
+        <button class="nav-item active" data-page="overview"><span>◫</span>Tổng quan</button>
+        <p class="nav-label">VẬN HÀNH</p>
+        <button class="nav-item" data-page="appointments"><span>◷</span>Lịch hẹn</button>
+        <button class="nav-item" data-page="orders"><span>▤</span>Đơn hàng</button>
+        <button class="nav-item" data-page="bankTransfers"><span>↗</span>Giao dịch ngân hàng</button>
+        <button class="nav-item" data-page="contacts"><span>✉</span>Tin nhắn</button>
+        <button class="nav-item" data-page="reviews"><span>☆</span>Đánh giá</button>
+        <p class="nav-label">NỘI DUNG CỬA HÀNG</p>
+        <button class="nav-item" data-page="services"><span>✂</span>Dịch vụ</button>
+        <button class="nav-item" data-page="products"><span>▧</span>Sản phẩm</button>
+        <button class="nav-item" data-page="branches"><span>⌖</span>Chi nhánh</button>
+        <button class="nav-item" data-page="stylists"><span>♙</span>Thợ cắt tóc</button>
+        <button class="nav-item" data-page="promotions"><span>%</span>Khuyến mãi</button>
+        <p class="nav-label">TÀI KHOẢN</p>
+        <button class="nav-item" data-page="customers"><span>♧</span>Khách hàng</button>
+        <button class="nav-item" data-page="staff"><span>♜</span>Nhân viên</button>
+      </nav>
+      <div class="sidebar-bottom"><span class="online-dot"></span><span>Đã kết nối Firebase</span></div>
+    </aside>
+
+    <section class="workspace">
+      <header class="topbar">
+        <button id="menuToggle" class="icon-button menu-toggle" aria-label="Mở điều hướng">☰</button>
+        <div><p class="eyebrow">QUẢN LÝ CỬA HÀNG</p><h1 id="pageTitle">Tổng quan</h1></div>
+        <div class="top-actions"><span id="userEmail" class="user-email"></span><button id="refreshButton" class="button secondary">↻ <span>Làm mới</span></button><button id="signOutButton" class="button ghost">Đăng xuất</button></div>
+      </header>
+      <div id="notice" class="notice" role="status" hidden></div>
+      <section id="content" class="content"></section>
+      <footer class="footer">Chí Phèo BarberShop <span>•</span> Giờ hiển thị theo múi giờ Việt Nam</footer>
+    </section>
+  </div>
+
+  <dialog id="recordDialog" class="record-dialog">
+    <form id="recordForm" method="dialog">
+      <div class="dialog-head"><div><p class="eyebrow">QUẢN LÝ DỮ LIỆU</p><h2 id="dialogTitle">Thêm mới</h2></div><button type="button" class="icon-button" data-close aria-label="Đóng">×</button></div>
+      <div id="formFields" class="form-grid"></div>
+      <p id="formError" class="error"></p>
+      <div class="dialog-actions"><button type="button" class="button secondary" data-close>Hủy</button><button class="button primary" type="submit">Lưu thay đổi</button></div>
+    </form>
+  </dialog>
+
+  <script type="module" src="./admin.js?v=20261029-supabase-status"></script>
+</body>
+</html>

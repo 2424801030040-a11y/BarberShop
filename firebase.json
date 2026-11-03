@@ -1,0 +1,18 @@
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "hosting": {
+    "public": "admin",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**",
+      "**/serviceAccountKey*.json",
+      "package.json",
+      "package-lock.json",
+      "setAdmin.js"
+    ]
+  }
+}

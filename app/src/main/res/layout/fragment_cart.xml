@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:padding="16dp">
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Giỏ hàng của bạn" android:textSize="24sp" android:textStyle="bold"/>
+    <include layout="@layout/view_mode_toggle" />
+    <androidx.recyclerview.widget.RecyclerView android:id="@+id/rvCart" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:clipToPadding="false" />
+    <EditText android:id="@+id/etAddress" android:background="@drawable/bg_field" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Địa chỉ giao hàng" android:inputType="textPostalAddress"/>
+    <Button android:id="@+id/btnPick" style="@style/Widget.Material3.Button.TextButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Chọn địa chỉ đã lưu"/>
+    <FrameLayout android:id="@+id/promoFieldContainer" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp">
+            <EditText android:id="@+id/etPromo" android:background="@drawable/bg_field" android:paddingEnd="48dp" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Chọn mã khuyến mãi hoặc nhập mã (không bắt buộc)" android:inputType="textCapCharacters" android:singleLine="true"/>
+            <TextView android:id="@+id/tvPromoArrow" android:layout_width="48dp" android:layout_height="match_parent" android:layout_gravity="end|center_vertical" android:gravity="center" android:text="&gt;" android:textSize="22sp" android:textColor="?attr/colorPrimary" android:clickable="true" android:focusable="true" android:contentDescription="Hiện mã khuyến mãi"/>
+    </FrameLayout>
+    <TextView android:id="@+id/tvTotal" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="18sp" android:textStyle="bold" android:padding="8dp"/>
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Phương thức thanh toán" android:textStyle="bold" android:layout_marginTop="10dp"/>
+    <RadioGroup android:id="@+id/rgPay" android:layout_width="match_parent" android:layout_height="wrap_content">
+        <RadioButton android:id="@+id/rbCash" android:checked="true" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Tiền mặt (khi nhận hàng / tại cửa hàng)"/>
+        <RadioButton android:id="@+id/rbBank" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Chuyển khoản (mã QR)"/>
+    </RadioGroup>
+    <Button android:id="@+id/btnOrder" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Đặt hàng"/>
+</LinearLayout>

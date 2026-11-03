@@ -1,0 +1,21 @@
+# Android / Gradle
+.gradle/
+**/build/
+local.properties
+.idea/workspace.xml
+
+# Firebase project-specific configuration and credentials
+app/google-services.json
+seed/serviceAccountKey.json
+serviceAccountKey*.json
+*.hprof
+.firebase/
+.firebaserc
+
+# Node dependencies and local environment files
+node_modules/
+scripts/node_modules/
+seed/node_modules/
+.env
+.env.*
+!.env.example

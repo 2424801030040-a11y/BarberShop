@@ -1,0 +1,162 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{db}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function owns(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function admin() {
+      return signedIn() && request.auth.token.admin == true;
+    }
+
+    function validAdminCatalog(col) {
+      let d = request.resource.data;
+      return (col == 'services'
+          && d.keys().hasOnly(['name', 'description', 'durationMinutes', 'price', 'imageUrl', 'createdAt', 'updatedAt'])
+          && d.keys().hasAll(['name', 'durationMinutes', 'price'])
+          && d.name is string && d.name.size() > 0 && d.name.size() <= 200
+          && (!('description' in d) || (d.description is string && d.description.size() <= 2000))
+          && d.durationMinutes is int && d.durationMinutes >= 15 && d.durationMinutes <= 240
+          && d.price is int && d.price >= 0 && validCatalogImage(d))
+        || (col == 'products'
+          && d.keys().hasOnly(['name', 'description', 'category', 'price', 'stock', 'imageUrl', 'createdAt', 'updatedAt'])
+          && d.keys().hasAll(['name', 'category', 'price', 'stock'])
+          && d.name is string && d.name.size() > 0 && d.name.size() <= 200
+          && d.category is string && d.category.size() > 0 && d.category.size() <= 200
+          && (!('description' in d) || (d.description is string && d.description.size() <= 2000))
+          && d.price is int && d.price >= 0 && d.stock is int && d.stock >= 0 && validCatalogImage(d))
+        || (col == 'branches'
+          && d.keys().hasOnly(['name', 'description', 'phone', 'createdAt', 'updatedAt'])
+          && d.keys().hasAll(['name', 'description'])
+          && d.name is string && d.name.size() > 0 && d.name.size() <= 200
+          && d.description is string && d.description.size() > 0 && d.description.size() <= 2000
+          && (!('phone' in d) || (d.phone is string && d.phone.size() <= 200)))
+        || (col == 'stylists'
+          && d.keys().hasOnly(['name', 'description', 'branchId', 'imageUrl', 'createdAt', 'updatedAt'])
+          && d.keys().hasAll(['name', 'branchId'])
+          && d.name is string && d.name.size() > 0 && d.name.size() <= 200
+          && d.branchId is string && d.branchId.size() > 0 && d.branchId.size() <= 200
+          && (!('description' in d) || (d.description is string && d.description.size() <= 2000)) && validCatalogImage(d))
+        || (col == 'promotions'
+          && d.keys().hasOnly(['name', 'description', 'code', 'percent', 'active', 'startsAt', 'endsAt', 'minSubtotal', 'createdAt', 'updatedAt'])
+          && d.keys().hasAll(['name', 'code', 'percent'])
+          && d.name is string && d.name.size() > 0 && d.name.size() <= 200
+          && d.code is string && d.code.size() > 0 && d.code.size() <= 200
+          && d.percent is number && d.percent >= 0 && d.percent <= 100
+          && (!('active' in d) || d.active is bool)
+          && (!('minSubtotal' in d) || (d.minSubtotal is int && d.minSubtotal >= 0))
+          && (!('description' in d) || (d.description is string && d.description.size() <= 2000)));
+    }
+
+    function validCatalogImage(d) {
+      return !('imageUrl' in d) || d.imageUrl == null
+        || (d.imageUrl is string && d.imageUrl.size() <= 1000
+          && d.imageUrl.matches('https://res[.]cloudinary[.]com/dj0e3lctd/image/upload/.*'));
+    }
+
+    match /{col}/{id} {
+      allow read: if col in ['services', 'products', 'branches', 'promotions', 'stylists']
+        || (admin() && col in ['appointments', 'orders', 'bankTransferEvents', 'contacts', 'reviews', 'users']);
+      allow create, update: if admin() && col in ['services', 'products', 'branches', 'promotions', 'stylists'] && validAdminCatalog(col);
+      allow delete: if admin() && (col in ['services', 'products', 'branches', 'promotions', 'stylists', 'reviews']);
+    }
+
+    // Checkout and inventory changes are performed by a trusted server endpoint.
+    match /products/{id} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /users/{uid} {
+      allow read, write: if owns(uid);
+    }
+
+    match /users/{uid}/addresses/{id} {
+      allow read, write: if owns(uid);
+    }
+
+    match /contacts/{id} {
+      allow create: if signedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.message is string
+        && request.resource.data.message.size() > 0
+        && request.resource.data.message.size() <= 2000;
+      allow update: if admin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'resolvedAt'])
+        && request.resource.data.status in ['open', 'resolved'];
+    }
+
+    match /notifications/{id} {
+      allow create: if admin()
+        && request.resource.data.keys().hasOnly(['recipientUid', 'contactId', 'type', 'from', 'subject', 'body', 'read', 'createdAt'])
+        && request.resource.data.keys().hasAll(['recipientUid', 'contactId', 'type', 'from', 'subject', 'body', 'read', 'createdAt'])
+        && request.resource.data.recipientUid is string
+        && request.resource.data.contactId is string
+        && exists(/databases/$(db)/documents/contacts/$(request.resource.data.contactId))
+        && get(/databases/$(db)/documents/contacts/$(request.resource.data.contactId)).data.userId == request.resource.data.recipientUid
+        && request.resource.data.type == 'admin_reply'
+        && request.resource.data.from == 'Chi Phèo BarberShop'
+        && request.resource.data.subject is string
+        && request.resource.data.subject.size() > 0
+        && request.resource.data.subject.size() <= 200
+        && request.resource.data.body is string
+        && request.resource.data.body.size() > 0
+        && request.resource.data.body.size() <= 4000
+        && request.resource.data.read == false;
+      allow read: if admin() || (signedIn() && resource.data.recipientUid == request.auth.uid);
+      allow update: if signedIn()
+        && resource.data.recipientUid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt'])
+        && request.resource.data.read == true;
+    }
+
+    match /slots/{id} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    match /appointments/{id} {
+      allow read: if signedIn() && resource.data.userId == request.auth.uid;
+      allow write: if false;
+    }
+
+    match /orders/{id} {
+      allow read: if signedIn() && resource.data.userId == request.auth.uid;
+      allow write: if false;
+    }
+
+    match /reviews/{rid} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['appointmentId', 'orderId', 'targetType', 'targetId', 'targetName', 'userId', 'rating', 'createdAt', 'comment'])
+        && request.resource.data.keys().hasAll(['targetType', 'targetId', 'targetName', 'userId', 'rating', 'createdAt'])
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.targetId is string
+        && request.resource.data.targetId.size() > 0
+        && request.resource.data.targetName is string
+        && request.resource.data.targetName.size() <= 200
+        && (!('comment' in request.resource.data) || (request.resource.data.comment is string && request.resource.data.comment.size() <= 1000))
+        && request.resource.data.rating is number
+        && request.resource.data.rating >= 1
+        && request.resource.data.rating <= 5
+        && request.resource.data.targetType in ['service', 'product']
+        && ((request.resource.data.targetType == 'service'
+              && request.resource.data.keys().hasAll(['appointmentId'])
+              && request.resource.data.appointmentId is string
+              && rid == request.resource.data.appointmentId
+              && get(/databases/$(db)/documents/appointments/$(rid)).data.status == 'completed'
+              && get(/databases/$(db)/documents/appointments/$(rid)).data.userId == request.auth.uid)
+         || (request.resource.data.targetType == 'product'
+              && request.resource.data.keys().hasAll(['orderId'])
+              && request.resource.data.orderId is string
+              && request.resource.data.orderId.size() > 0
+              && rid == request.resource.data.orderId + '_' + request.resource.data.targetId
+              && get(/databases/$(db)/documents/orders/$(request.resource.data.orderId)).data.status == 'delivered'
+              && get(/databases/$(db)/documents/orders/$(request.resource.data.orderId)).data.userId == request.auth.uid));
+    }
+  }
+}

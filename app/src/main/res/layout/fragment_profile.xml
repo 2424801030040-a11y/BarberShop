@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent">
+<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="24dp">
+    <ImageView android:id="@+id/ivAvatar" android:layout_width="96dp" android:layout_height="96dp" android:layout_gravity="center_horizontal" android:src="@android:drawable/sym_def_app_icon" android:contentDescription="Ảnh đại diện"/>
+    <Button android:id="@+id/btnPhoto" style="@style/Widget.Material3.Button.TonalButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_gravity="center_horizontal" android:text="Đổi ảnh đại diện"/>
+    <TextView android:id="@+id/tvEmail" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="16sp" android:layout_marginBottom="12dp"/>
+    <EditText android:id="@+id/etName" android:background="@drawable/bg_field" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Họ và tên" android:inputType="textPersonName"/>
+    <EditText android:id="@+id/etPhone" android:background="@drawable/bg_field" android:layout_marginTop="8dp" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Số điện thoại" android:inputType="phone"/>
+    <Button android:id="@+id/btnSave" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Lưu hồ sơ"/>
+    <Button android:id="@+id/btnAddresses" style="@style/Widget.Material3.Button.OutlinedButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Địa chỉ giao hàng"/>
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="18dp" android:layout_marginBottom="4dp" android:text="LỊCH SỬ CỦA BẠN" android:textColor="#9e3f34" android:textSize="13sp" android:textStyle="bold" />
+    <Button android:id="@+id/btnAppts" style="@style/Widget.Material3.Button.OutlinedButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Lịch sử lịch hẹn"/>
+    <Button android:id="@+id/btnOrders" style="@style/Widget.Material3.Button.OutlinedButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Lịch sử đơn hàng"/>
+    <Button android:id="@+id/btnStaff" style="@style/Widget.Material3.Button.TonalButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Quản lý cửa hàng" android:visibility="gone"/>
+    <Button android:id="@+id/btnLogout" style="@style/Widget.Material3.Button.OutlinedButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="24dp" android:text="Đăng xuất"/>
+</LinearLayout></ScrollView>

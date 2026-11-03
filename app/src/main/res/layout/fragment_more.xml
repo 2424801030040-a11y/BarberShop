@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:paddingStart="16dp" android:paddingEnd="16dp" android:paddingTop="22dp" android:paddingBottom="12dp" android:background="#F5F1E9">
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Khác" android:textSize="27sp" android:textStyle="bold" android:textColor="#241B18" />
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Khám phá cửa hàng và nhận hỗ trợ khi bạn cần." android:textSize="14sp" android:textColor="#766B62" android:layout_marginTop="4dp" android:layout_marginBottom="14dp" />
+    <androidx.recyclerview.widget.RecyclerView android:id="@+id/rvMoreActions" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:clipToPadding="false" />
+</LinearLayout>

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent">
+<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="20dp">
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Đặt lịch cắt tóc" android:textSize="26sp" android:textStyle="bold"/>
+    <TextView style="@style/Lbl" android:text="Chi nhánh"/>
+    <Spinner android:id="@+id/spBranch" android:background="@drawable/bg_field" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    <TextView style="@style/Lbl" android:text="Thợ cắt tóc"/>
+    <Spinner android:id="@+id/spStylist" android:background="@drawable/bg_field" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    <TextView style="@style/Lbl" android:text="Dịch vụ"/>
+    <Spinner android:id="@+id/spService" android:background="@drawable/bg_field" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    <Button android:id="@+id/btnDate" style="@style/Widget.Material3.Button.TonalButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:text="Chọn ngày"/>
+    <TextView style="@style/Lbl" android:text="Giờ còn trống"/>
+    <Spinner android:id="@+id/spTime" android:background="@drawable/bg_field" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    <Button android:id="@+id/btnConfirm" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="20dp" android:text="Xác nhận đặt lịch"/>
+</LinearLayout></ScrollView>

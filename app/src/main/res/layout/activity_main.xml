@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:background="#F5F1E9">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="68dp" android:gravity="center_vertical" android:orientation="horizontal" android:paddingStart="18dp" android:paddingEnd="18dp" android:background="#FFFEFC" android:elevation="2dp">
+        <ImageButton android:id="@+id/btnBack" android:layout_width="40dp" android:layout_height="40dp" android:layout_marginEnd="8dp" android:background="?attr/selectableItemBackgroundBorderless" android:contentDescription="Quay lại" android:padding="8dp" android:src="@drawable/ic_arrow_back" app:tint="#241B18" android:visibility="gone" />
+        <ImageView android:layout_width="44dp" android:layout_height="44dp" android:src="@drawable/ic_brand_mark" android:contentDescription="Logo Chí Phèo BarberShop"/>
+        <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginStart="12dp" android:layout_weight="1">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="CHÍ PHÈO" android:textColor="#241B18" android:textSize="18sp" android:fontFamily="sans-serif-black" android:letterSpacing="0.06"/>
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="BARBER SHOP  ·  SAIGON" android:textColor="#8D3C32" android:textSize="9sp" android:textStyle="bold" android:letterSpacing="0.12"/>
+        </LinearLayout>
+        <FrameLayout android:id="@+id/notificationAction" android:layout_width="44dp" android:layout_height="44dp" android:visibility="gone">
+            <ImageButton android:id="@+id/btnHeaderNotifications" android:layout_width="match_parent" android:layout_height="match_parent" android:background="?attr/selectableItemBackgroundBorderless" android:contentDescription="Thông báo" android:padding="10dp" android:src="@drawable/ic_notifications" app:tint="#8D3C32" />
+            <TextView android:id="@+id/tvNotificationBadge" android:layout_width="22dp" android:layout_height="18dp" android:layout_gravity="top|end" android:background="@drawable/bg_cart_badge" android:gravity="center" android:textColor="#FFFFFF" android:textSize="8sp" android:textStyle="bold" android:visibility="gone" />
+        </FrameLayout>
+        <FrameLayout android:id="@+id/cartAction" android:layout_width="44dp" android:layout_height="44dp" android:visibility="gone">
+            <ImageButton android:id="@+id/btnHeaderCart" android:layout_width="match_parent" android:layout_height="match_parent" android:background="?attr/selectableItemBackgroundBorderless" android:contentDescription="Mở giỏ hàng" android:padding="10dp" android:src="@drawable/ic_shopping_cart" app:tint="#8D3C32" />
+            <TextView android:id="@+id/tvCartBadge" android:layout_width="18dp" android:layout_height="18dp" android:layout_gravity="top|end" android:background="@drawable/bg_cart_badge" android:gravity="center" android:textColor="#FFFFFF" android:textSize="9sp" android:textStyle="bold" android:visibility="gone" />
+        </FrameLayout>
+    </LinearLayout>
+    <FrameLayout android:id="@+id/container" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"/>
+    <com.google.android.material.bottomnavigation.BottomNavigationView android:id="@+id/bottomNav" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="#FFFEFC" app:itemIconTint="@color/nav_item_tint" app:itemTextColor="@color/nav_item_tint" app:labelVisibilityMode="labeled" app:menu="@menu/bottom_nav"/>
+</LinearLayout>

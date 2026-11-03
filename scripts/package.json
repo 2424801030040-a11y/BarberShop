@@ -1,0 +1,9 @@
+{
+  "name": "barbershop-admin-tools",
+  "private": true,
+  "engines": {"node": "20"},
+  "scripts": {"lint": "node --check set-staff-claim.js"},
+  "dependencies": {
+    "firebase-admin": "^12.0.0"
+  }
+}
