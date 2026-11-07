@@ -1,0 +1,14 @@
+.git
+.gradle
+**/build
+.idea
+ai-training/.venv
+ai-training/__pycache__
+ai-training/fused_model
+ai-training/qwen_barbershop_lora
+adapters
+app
+admin/node_modules
+functions/node_modules
+seed/node_modules
+*.hprof

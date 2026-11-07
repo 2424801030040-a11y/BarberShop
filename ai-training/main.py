@@ -1,148 +1,67 @@
+"""Lightweight Render API gateway for the Chi Pheo BarberShop AI service.
+
+The Render Free instance must not load the local Transformers weights. If
+KAGGLE_SERVER_URL is configured, generation requests are forwarded to that
+server; otherwise the API returns safe Vietnamese fallback guidance.
+"""
+
 import json
 import os
-import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException
 import firebase_admin
+import requests
+from fastapi import FastAPI
 from firebase_admin import credentials, firestore
-import kagglehub
 from pydantic import BaseModel, Field
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
-
-app = FastAPI(title="BarberShop AI Advisory API")
-
-# ---------------------------------------------------------
-# 1. Khởi tạo Firebase Admin SDK (An toàn tuyệt đối trên Cloud)
-# ---------------------------------------------------------
-CRED_PATH = os.environ.get("FIREBASE_CREDENTIALS", "ai-training/serviceAccountKey.json")
-FIREBASE_JSON = os.environ.get("FIREBASE_JSON_CONTENT")
-
-try:
-    if not firebase_admin._apps:
-        if FIREBASE_JSON:
-            # Ưu tiên đọc từ biến môi trường FIREBASE_JSON_CONTENT trên Render
-            cred_dict = json.loads(FIREBASE_JSON)
-            cred = credentials.Certificate(cred_dict)
-            firebase_admin.initialize_app(cred)
-            db = firestore.client()
-            print("Đã kết nối Firebase qua biến môi trường Cloud thành công!")
-        elif os.path.exists(CRED_PATH):
-            # Đọc từ file local khi chạy trên máy Mac
-            cred = credentials.Certificate(CRED_PATH)
-            firebase_admin.initialize_app(cred)
-            db = firestore.client()
-            print("Đã kết nối Firebase qua file local thành công!")
-        else:
-            print("[Cảnh báo] Không tìm thấy credentials Firebase. Chạy ở chế độ fallback.")
-            db = None
-    else:
-        db = firestore.client()
-except Exception as firebase_err:
-    print(f"[Cảnh báo] Không thể kết nối Firebase: {firebase_err}")
-    db = None
 
 
-def get_store_data_from_firebase() -> str:
-    """Truy vấn dịch vụ và sản phẩm từ Firestore (Bảo vệ khi không kết nối được Firebase)."""
-    if db is None:
-        return "Vui lòng tham khảo thông tin dịch vụ và sản phẩm trực tiếp trên ứng dụng.\n"
+app = FastAPI(title="Chi Pheo BarberShop AI Gateway", version="1.0.0")
 
-    info_parts = []
 
-    # Lấy danh mục Dịch vụ
+def initialize_firebase():
+    """Initialize Firebase when credentials are available; otherwise use fallback mode."""
     try:
-        services_docs = list(db.collection("services").stream())
-        service_list = []
-        for doc in services_docs:
-            data = doc.to_dict()
-            name = data.get("name") or data.get("title") or doc.id
-            price = data.get("price") if data.get("price") is not None else data.get("cost")
-            unit = data.get("unit", "đ")
-            if price is not None:
-                try:
-                    formatted_price = f"{int(price):,}".replace(",", ".") + f" {unit}"
-                    service_list.append(f"  + {name}: {formatted_price}")
-                except (ValueError, TypeError):
-                    service_list.append(f"  + {name}: {price} {unit}")
-            else:
-                service_list.append(f"  + {name}")
+        if firebase_admin._apps:
+            return firestore.client()
 
-        if service_list:
-            info_parts.append("Dịch vụ cắt / uốn / nhuộm:\n" + "\n".join(service_list))
-    except Exception as e:
-        print(f"[Cảnh báo] Lỗi truy vấn dịch vụ: {e}")
-
-    # Lấy danh mục Sản phẩm
-    try:
-        products_docs = list(db.collection("products").stream())
-        product_list = []
-        for doc in products_docs:
-            data = doc.to_dict()
-            name = data.get("name") or data.get("title") or doc.id
-            price = data.get("price") if data.get("price") is not None else data.get("cost")
-            unit = data.get("unit", "đ")
-            if price is not None:
-                try:
-                    formatted_price = f"{int(price):,}".replace(",", ".") + f" {unit}"
-                    product_list.append(f"  + {name}: {formatted_price}")
-                except (ValueError, TypeError):
-                    product_list.append(f"  + {name}: {price} {unit}")
-            else:
-                product_list.append(f"  + {name}")
-
-        if product_list:
-            info_parts.append("Sản phẩm chăm sóc & tạo kiểu tóc đang bán tại tiệm:\n" + "\n".join(product_list))
-    except Exception as e:
-        print(f"[Cảnh báo] Lỗi truy vấn sản phẩm: {e}")
-
-    if info_parts:
-        return "THÔNG TIN BẢNG GIÁ VÀ SẢN PHẨM CỦA TIỆM (cập nhật từ hệ thống):\n" + "\n\n".join(info_parts)
-    return "Vui lòng tham khảo thông tin chi tiết trên ứng dụng.\n"
-
-
-# ---------------------------------------------------------
-# 2. Xử lý đường dẫn và Nạp mô hình Transformers (Cross-Platform)
-# ---------------------------------------------------------
-kaggle_dataset = os.environ.get("KAGGLE_DATASET_PATH")
-
-if kaggle_dataset:
-    print(f"Đang tải model weights từ Kaggle Dataset: {kaggle_dataset}...")
-    download_dir = kagglehub.dataset_download(kaggle_dataset)
-    MODEL_PATH = Path(download_dir) / "fused_model"
-else:
-    MODEL_PATH = Path(
-        os.environ.get(
-            "HAIR_AI_MODEL_PATH",
-            Path(__file__).resolve().parent / "fused_model",
+        firebase_json = os.environ.get("FIREBASE_JSON_CONTENT", "").strip()
+        credentials_path = os.environ.get(
+            "FIREBASE_CREDENTIALS",
+            str(Path(__file__).resolve().parent / "serviceAccountKey.json"),
         )
-    ).expanduser()
-    if not MODEL_PATH.is_absolute():
-        MODEL_PATH = (Path(__file__).resolve().parent / MODEL_PATH).resolve()
 
-if not MODEL_PATH.is_dir():
-    raise RuntimeError(f"Không tìm thấy thư mục mô hình: {MODEL_PATH}")
+        if firebase_json:
+            try:
+                credential_data = json.loads(firebase_json)
+            except json.JSONDecodeError as error:
+                print(f"Firebase credentials JSON is invalid ({error.__class__.__name__}); using fallback mode.")
+                return None
+            credential = credentials.Certificate(credential_data)
+        elif os.path.isfile(credentials_path):
+            credential = credentials.Certificate(credentials_path)
+        else:
+            print("Firebase credentials were not found; using fallback mode.")
+            return None
 
-print(f"Đang nạp mô hình từ {MODEL_PATH}...")
-tokenizer = AutoTokenizer.from_pretrained(str(MODEL_PATH))
-model = AutoModelForCausalLM.from_pretrained(
-    str(MODEL_PATH),
-    torch_dtype=torch.float32,
-    device_map="auto"
-)
-print("Đã nạp mô hình thành công!")
+        firebase_admin.initialize_app(credential)
+        print("Firebase Admin initialized.")
+        return firestore.client()
+    except Exception as error:
+        # Firebase is optional for the lightweight service and must not prevent startup.
+        print(f"Firebase initialization failed ({error.__class__.__name__}); using fallback mode.")
+        return None
 
 
-# ---------------------------------------------------------
-# 3. Schema Pydantic
-# ---------------------------------------------------------
+db = initialize_firebase()
+
+
 class Preferences(BaseModel):
-    hairType: Optional[str] = None
-    hairLength: Optional[str] = None
-    goal: Optional[str] = None
-    color: Optional[str] = None
+    hairType: Optional[str] = Field(default=None, max_length=100)
+    hairLength: Optional[str] = Field(default=None, max_length=100)
+    goal: Optional[str] = Field(default=None, max_length=200)
+    color: Optional[str] = Field(default=None, max_length=100)
 
 
 class ChatRequest(BaseModel):
@@ -153,43 +72,47 @@ class ChatRequest(BaseModel):
 
 
 class FaceConsultRequest(BaseModel):
-    face_aspect_ratio: float = Field(gt=0.5, le=3.0)
-    forehead_to_cheek_ratio: float = Field(gt=0.3, le=1.5)
-    jaw_to_cheek_ratio: float = Field(gt=0.3, le=1.5)
-    forehead_to_jaw_ratio: float = Field(gt=0.3, le=2.5)
+    # Accept small values from older Android builds; classification ignores
+    # width ratios outside realistic ranges instead of returning HTTP 422.
+    face_aspect_ratio: float = Field(gt=0, le=10)
+    forehead_to_cheek_ratio: float = Field(gt=0, le=10)
+    jaw_to_cheek_ratio: float = Field(gt=0, le=10)
+    forehead_to_jaw_ratio: float = Field(gt=0, le=10)
 
 
-# ---------------------------------------------------------
-# 4. Helper Function: Sinh văn bản qua Transformers
-# ---------------------------------------------------------
-def generate_response(messages: List[Dict[str, str]], max_new_tokens: int = 512, temperature: float = 0.6) -> str:
-    formatted_prompt = tokenizer.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True
-    )
-    inputs = tokenizer(formatted_prompt, return_tensors="pt").to(model.device)
-
-    with torch.no_grad():
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=max_new_tokens,
-            temperature=temperature,
-            top_p=0.9,
-            repetition_penalty=1.15,
-            do_sample=True,
-            pad_token_id=tokenizer.eos_token_id
-        )
-
-    input_length = inputs["input_ids"].shape[1]
-    generated_tokens = outputs[0][input_length:]
-    return tokenizer.decode(generated_tokens, skip_special_tokens=True)
+def _format_price(value: Any, unit: str = "đ") -> str:
+    try:
+        return f"{int(float(value)):,}".replace(",", ".") + f" {unit}"
+    except (TypeError, ValueError, OverflowError):
+        return f"{value} {unit}"
 
 
-# ---------------------------------------------------------
-# 5. API Endpoints
-# ---------------------------------------------------------
-@app.get("/health")
-async def health_endpoint():
-    return {"success": True, "model_loaded": True, "model": MODEL_PATH.name}
+def get_store_data_from_firebase() -> str:
+    """Read a small, bounded catalog context. Return a safe fallback on Firestore errors."""
+    if db is None:
+        return "Chưa kết nối được danh mục cửa hàng; không tự suy đoán tên hoặc giá."
+
+    sections = []
+    for collection, label in (("services", "Dịch vụ"), ("products", "Sản phẩm")):
+        try:
+            rows = []
+            for doc in db.collection(collection).limit(40).stream():
+                data = doc.to_dict() or {}
+                name = data.get("name") or data.get("title")
+                if not isinstance(name, str) or not name.strip():
+                    continue
+                price = data.get("price", data.get("cost"))
+                description = data.get("description")
+                detail = f" — {_format_price(price, str(data.get('unit') or 'đ'))}" if price is not None else ""
+                if isinstance(description, str) and description.strip():
+                    detail += "; " + description.strip().replace("\n", " ")[:160]
+                rows.append(f"• {name.strip()[:100]}{detail}")
+            if rows:
+                sections.append(label + ":\n" + "\n".join(rows))
+        except Exception as error:
+            print(f"Firestore catalog read failed for {collection} ({error.__class__.__name__}).")
+
+    return "\n\n".join(sections) if sections else "Chưa có dữ liệu danh mục; không tự suy đoán tên hoặc giá."
 
 
 def classify_face_shape(measurements: FaceConsultRequest) -> str:
@@ -197,151 +120,148 @@ def classify_face_shape(measurements: FaceConsultRequest) -> str:
     forehead_jaw = measurements.forehead_to_jaw_ratio
     jaw_cheek = measurements.jaw_to_cheek_ratio
 
-    if forehead_jaw >= 1.16 and jaw_cheek < 0.84:
-        return "Heart"
-    if jaw_cheek >= 0.88 and 0.90 <= forehead_jaw <= 1.10:
-        return "Square"
+    # Ignore corrupted/legacy normalized coordinates instead of rejecting the scan.
+    ratios_reliable = 0.3 <= forehead_jaw <= 2.5 and 0.3 <= jaw_cheek <= 1.5
+    if ratios_reliable:
+        if forehead_jaw >= 1.16 and jaw_cheek < 0.84:
+            return "Heart"
+        if jaw_cheek >= 0.88 and 0.90 <= forehead_jaw <= 1.10:
+            return "Square"
+
     if aspect >= 1.70:
         return "Oblong"
-    if aspect <= 1.27 and jaw_cheek >= 0.78 and forehead_jaw <= 1.12:
+    if aspect <= 1.27:
         return "Round"
     return "Oval"
 
 
-@app.post("/api/consult-face")
-async def consult_face_endpoint(request: FaceConsultRequest):
+def _face_fallback(shape: str) -> str:
+    advice = {
+        "Oval": "Bạn có thể thử kiểu side part để gương mặt trông cân đối, textured crop để tạo vẻ trẻ trung, hoặc crew cut nếu muốn chăm sóc đơn giản. Hãy nhờ thợ điều chỉnh độ dài hai bên theo chất tóc và phong cách của bạn.",
+        "Round": "Bạn có thể thử side part hoặc textured crop với phần đỉnh tạo độ phồng vừa phải để gương mặt trông dài và gọn hơn. Nếu thích tóc ngắn, crew cut với hai bên gọn cũng là lựa chọn dễ chăm sóc.",
+        "Square": "Bạn có thể thử side part để làm mềm đường nét, textured crop để tạo vẻ tự nhiên, hoặc crew cut nếu thích kiểu gọn gàng. Hãy trao đổi với thợ về độ chuyển ở hai bên để giữ tổng thể hài hòa.",
+        "Heart": "Bạn có thể thử kiểu rẽ ngôi lệch hoặc tóc mái chải ngang để tạo sự cân bằng cho phần trán. Tóc layer có độ dài vừa phải cũng phù hợp; nên giữ phần đỉnh tự nhiên, không tạo quá nhiều độ phồng.",
+        "Oblong": "Bạn có thể thử textured crop hoặc kiểu tóc có mái nhẹ để tạo cảm giác gương mặt cân đối hơn. Side part với phần đỉnh vừa phải cũng là lựa chọn phù hợp; nên tránh vuốt dựng quá cao nếu muốn hạn chế cảm giác mặt dài.",
+    }
+    localized_shape = {
+        "Oval": "oval",
+        "Round": "tròn",
+        "Square": "vuông",
+        "Heart": "trái tim",
+        "Oblong": "dài",
+    }.get(shape, "oval")
+    return (
+        f"Dựa trên số đo hiện có, khuôn mặt của bạn có vẻ thuộc dáng {localized_shape}. "
+        + advice.get(shape, advice["Oval"])
+        + " Đây là gợi ý tham khảo từ tỷ lệ hình học; thợ cắt tóc có thể điều chỉnh theo đường chân tóc, chất tóc và sở thích của bạn."
+    )
+
+
+def _chat_fallback(request: ChatRequest, store_context: str) -> str:
+    message = request.message.strip().lower()
+    if any(keyword in message for keyword in ("giá", "bao nhiêu", "dịch vụ", "sản phẩm")):
+        if db is not None and ("Dịch vụ:" in store_context or "Sản phẩm:" in store_context):
+            return (
+                "Mình gửi bạn thông tin danh mục hiện có của tiệm:\n"
+                + store_context
+                + "\n\nBạn hãy xem lại giá và tình trạng còn hàng trong ứng dụng trước khi đặt nhé."
+            )
+        return "Hiện mình chưa lấy được bảng giá mới nhất. Bạn vui lòng xem mục Cửa hàng trong ứng dụng hoặc liên hệ trực tiếp Chi Phèo BarberShop để được báo giá chính xác."
+    return (
+        "Máy chủ tư vấn AI đang tạm thời không kết nối được với mô hình. Bạn có thể cho mình biết chất tóc, "
+        "độ dài hiện tại và kiểu tóc mong muốn; trong lúc chờ, hãy xem mục Cửa hàng trong ứng dụng để kiểm tra "
+        "dịch vụ và sản phẩm đang có."
+    )
+
+
+def _proxy_request(path: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    base_url = os.environ.get("KAGGLE_SERVER_URL", "").strip().rstrip("/")
+    if not base_url:
+        return None
+
+    timeout = 25
     try:
-        shape = classify_face_shape(request)
-        dynamic_store_info = get_store_data_from_firebase()
-        prompt = (
-            f"Customer's face shape detected: {shape}. As a professional Barber Consultant at "
-            "Chi Phèo BarberShop, recommend 2-3 suitable hairstyles that complement this face "
-            "shape, explain briefly why, and suggest styling tips. Reply in natural, grammatically "
-            "correct Vietnamese. Use familiar Vietnamese hairstyle names and complete sentences. "
-            "Do not invent services or products."
-        )
-        system_prompt = (
-            "Bạn là chuyên viên tư vấn tóc của Chí Phèo BarberShop Saigon. "
-            "Trả lời bằng tiếng Việt tự nhiên, đúng chính tả và ngữ pháp. Đưa ra 2-3 kiểu tóc "
-            "phù hợp, giải thích ngắn gọn lý do và cách tạo kiểu. Dùng tên kiểu tóc quen thuộc; "
-            "không dịch sát từng từ tiếng Anh hoặc tạo cụm từ vô nghĩa. Mỗi gợi ý phải là câu "
-            "hoàn chỉnh. Không bịa tên dịch vụ, sản phẩm hay giá.\n\n"
-            f"{dynamic_store_info}"
-        )
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt},
-        ]
+        timeout = max(3, min(30, int(os.environ.get("KAGGLE_PROXY_TIMEOUT_SECONDS", "25"))))
+    except ValueError:
+        pass
 
-        response_text = generate_response(messages, max_new_tokens=512, temperature=0.45)
-        reply = re.sub(r"\*\*|__|`", "", response_text.strip()).strip()
-        reply = re.sub(r"tóc\s+dài\s+tay", "tóc dài", reply, flags=re.IGNORECASE)
+    headers = {"content-type": "application/json"}
+    token = os.environ.get("KAGGLE_SERVER_TOKEN", "").strip()
+    if token:
+        headers["authorization"] = f"Bearer {token}"
 
-        if not reply:
-            raise HTTPException(status_code=502, detail="Mô hình chưa tạo được tư vấn.")
-        return {"face_shape": shape, "reply": reply, "success": True}
-    except HTTPException:
-        raise
-    except Exception as error:
-        raise HTTPException(status_code=500, detail="Không thể tạo tư vấn khuôn mặt.") from error
+    try:
+        response = requests.post(
+            base_url + path,
+            json=payload,
+            headers=headers,
+            timeout=(4, timeout),
+        )
+        response.raise_for_status()
+        result = response.json()
+        return result if isinstance(result, dict) else None
+    except (requests.RequestException, ValueError) as error:
+        # Do not log request bodies, credentials, or customer messages.
+        print(f"Kaggle inference proxy failed ({error.__class__.__name__}).")
+        return None
+
+
+@app.get("/")
+def root():
+    return {"success": True, "service": "Chi Pheo BarberShop AI Gateway", "health": "/health"}
+
+
+@app.get("/health")
+def health_endpoint():
+    return {
+        "success": True,
+        "model_loaded": False,
+        "mode": "proxy" if os.environ.get("KAGGLE_SERVER_URL", "").strip() else "fallback",
+        "kaggle_proxy_configured": bool(os.environ.get("KAGGLE_SERVER_URL", "").strip()),
+        "firebase_available": db is not None,
+    }
+
+
+@app.post("/api/consult-face")
+def consult_face_endpoint(request: FaceConsultRequest):
+    shape = classify_face_shape(request)
+    store_context = get_store_data_from_firebase()
+    payload = request.model_dump()
+    payload["message"] = (
+        f"Khách hàng có khuôn mặt dáng {shape}. Hãy tư vấn 2-3 kiểu tóc phù hợp bằng tiếng Việt tự nhiên, "
+        "giải thích ngắn gọn lý do và mẹo tạo kiểu. Không bịa dịch vụ, sản phẩm hoặc giá.\n\n"
+        f"Thông tin cửa hàng:\n{store_context[:2500]}"
+    )
+
+    result = _proxy_request("/api/consult-face", payload)
+    if result:
+        reply = result.get("reply") or result.get("answer") or result.get("response")
+        if isinstance(reply, str) and reply.strip():
+            return {"success": True, "face_shape": result.get("face_shape") or shape, "reply": reply.strip()}
+
+    return {"success": True, "face_shape": shape, "reply": _face_fallback(shape), "fallback": True}
 
 
 @app.post("/api/chat")
-async def chat_endpoint(request: ChatRequest):
-    try:
-        prompt = request.message.strip()
-        if not prompt:
-            raise HTTPException(status_code=422, detail="Vui lòng nhập câu hỏi.")
+def chat_endpoint(request: ChatRequest):
+    message = request.message.strip()
+    if not message:
+        return {"success": True, "answer": "Bạn hãy nhập câu hỏi về kiểu tóc, chăm sóc tóc hoặc dịch vụ của tiệm nhé.", "reply": "Bạn hãy nhập câu hỏi về kiểu tóc, chăm sóc tóc hoặc dịch vụ của tiệm nhé."}
 
-        dynamic_store_info = get_store_data_from_firebase()
+    store_context = get_store_data_from_firebase()
+    payload = request.model_dump(exclude_none=True)
+    payload["message"] = (
+        f"{message}\n\n[Thông tin tham khảo từ Firestore; chỉ dùng đúng dữ liệu này, không tự đoán giá.]\n"
+        f"{store_context[:2200]}"
+    )[:3900]
+    result = _proxy_request("/api/chat", payload)
+    if result:
+        answer = result.get("answer") or result.get("reply") or result.get("response")
+        if isinstance(answer, str) and answer.strip():
+            return {"success": True, "answer": answer.strip(), "reply": answer.strip(), "response": answer.strip()}
 
-        system_prompt = (
-            "Bạn là chuyên viên tư vấn AI thân thiện và chuyên nghiệp của Chí Phèo BarberShop Saigon.\n"
-            f"{dynamic_store_info}\n\n"
-            "Quy tắc phản hồi:\n"
-            "1. Vai trò của bạn luôn là nhân viên tư vấn của cửa hàng, không phải khách hàng. Hãy trả lời trực tiếp câu hỏi mới nhất; tuyệt đối không viết thay câu hỏi của khách, không giả làm người dùng và không lặp lại yêu cầu dưới góc nhìn khách.\n"
-            "2. Tiệm có bán sản phẩm chăm sóc tóc và cung cấp dịch vụ cắt, uốn, nhuộm. Chỉ nêu mặt hàng hoặc dịch vụ có trong thông tin cửa hàng ở trên; không tự bịa tên, giá hay cam kết.\n"
-            "3. Trả lời bằng tiếng Việt tự nhiên, đúng chính tả và ngữ pháp; tự đọc lại câu trả lời trước khi gửi. Khi khách xin gợi ý kiểu tóc, nêu 2-3 kiểu quen thuộc, mỗi kiểu trong một câu hoàn chỉnh gồm tên kiểu, lý do phù hợp và một chỉ dẫn ngắn cho thợ. Không cắt cụt ý để giữ câu trả lời ngắn. Đọc lịch sử để giữ ngữ cảnh, nhưng chỉ phản hồi tin nhắn mới nhất.\n"
-            "4. Dùng thuật ngữ làm tóc tự nhiên trong tiếng Việt; không dịch sát từng từ từ tiếng Anh và không tạo cụm vô nghĩa như 'tóc dài tay'. Nếu không chắc tên kiểu tóc, hãy mô tả đơn giản như 'tóc dài' hoặc hỏi thêm. Không dùng danh sách đánh số nếu khách không yêu cầu.\n"
-            "5. Không lặp lại nguyên văn câu trả lời cũ nếu câu đó có thuật ngữ lạ hoặc sai; hãy tự sửa và trả lời đúng yêu cầu mới nhất. Nếu khách muốn nhắc lại, hãy tóm tắt câu trả lời đã sửa thành tối đa 3 câu hoàn chỉnh, không lặp danh sách dài.\n"
-            "6. Không chẩn đoán bệnh hoặc kê thuốc; nếu khách bị dị ứng/viêm da đầu, khuyên gặp bác sĩ da liễu."
-        )
-
-        pref_info = ""
-        if request.preferences:
-            p = request.preferences
-            pref_details = []
-            if p.hairType and "chọn" not in p.hairType:
-                pref_details.append(f"Chất tóc: {p.hairType}")
-            if p.hairLength and "chọn" not in p.hairLength:
-                pref_details.append(f"Độ dài: {p.hairLength}")
-            if p.goal and "chọn" not in p.goal:
-                pref_details.append(f"Mục tiêu: {p.goal}")
-            if p.color and "chọn" not in p.color:
-                pref_details.append(f"Màu tóc: {p.color}")
-            if pref_details:
-                pref_info = "\nThông tin tóc khách hàng: " + ", ".join(pref_details)
-
-        messages = [{"role": "system", "content": system_prompt + pref_info}]
-
-        history = request.history or []
-        for item in history[-8:]:
-            if not isinstance(item, dict):
-                continue
-            text = str(item.get("text", item.get("content", ""))).strip()
-            if not text:
-                continue
-            source_role = item.get("role")
-            if source_role not in ["user", "model", "assistant"]:
-                continue
-            role = "assistant" if source_role in ["model", "assistant"] else "user"
-            messages.append({"role": role, "content": text})
-
-        last = history[-1] if history else {}
-        last_text = (
-            str(last.get("text", last.get("content", ""))).strip()
-            if isinstance(last, dict)
-            else ""
-        )
-        if not (
-            isinstance(last, dict)
-            and last.get("role") == "user"
-            and last_text == prompt
-        ):
-            messages.append({"role": "user", "content": prompt})
-
-        response_text = generate_response(messages, max_new_tokens=request.max_tokens, temperature=0.6)
-
-        answer = re.sub(r"tóc\s+dài\s+tay", "tóc dài", response_text.strip(), flags=re.IGNORECASE)
-        answer = re.sub(
-            r"cắt theo hình bàn chèn hoặc cái ca lô",
-            "có hai bên gọn và phần đỉnh tạo độ phồng nhẹ",
-            answer,
-            flags=re.IGNORECASE,
-        )
-        answer = re.sub(r"\*\*|__|`", "", answer).strip()
-
-        if answer and not re.search(r"(?<!\d)[.!?…。！？]$", answer):
-            endings = list(re.finditer(r"(?<!\d)[.!?…](?=\s|$)", answer))
-            if endings:
-                answer = answer[:endings[-1].end()].rstrip()
-
-        if not answer:
-            raise HTTPException(
-                status_code=502, detail="Mô hình chưa tạo được câu trả lời."
-            )
-
-        return {
-            "answer": answer,
-            "reply": answer,
-            "response": answer,
-            "success": True,
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"Chat generation failed: {type(e).__name__}")
-        raise HTTPException(status_code=500, detail="Không thể tạo câu trả lời.") from e
+    answer = _chat_fallback(request, store_context)
+    return {"success": True, "answer": answer, "reply": answer, "response": answer, "fallback": True}
 
 
 if __name__ == "__main__":
@@ -349,6 +269,6 @@ if __name__ == "__main__":
 
     uvicorn.run(
         app,
-        host=os.environ.get("HAIR_AI_HOST", "0.0.0.0"),
-        port=int(os.environ.get("HAIR_AI_PORT", "8000")),
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", "8000")),
     )
