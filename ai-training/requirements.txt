@@ -1,5 +1,7 @@
 fastapi==0.128.8
-firebase-admin==7.7.0
-mlx-lm==0.29.1
-pydantic==2.13.5
 uvicorn==0.39.0
+pydantic==2.13.5
+firebase-admin==7.7.0
+transformers
+torch
+accelerate

@@ -6,12 +6,16 @@ from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, HTTPException
 import firebase_admin
 from firebase_admin import credentials, firestore
-import mlx_lm
+import kagglehub
 from pydantic import BaseModel, Field
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 app = FastAPI(title="BarberShop AI Advisory API")
 
+# ---------------------------------------------------------
 # 1. Khởi tạo Firebase Admin SDK
+# ---------------------------------------------------------
 CRED_PATH = os.environ.get("FIREBASE_CREDENTIALS", "serviceAccountKey.json")
 
 if not firebase_admin._apps:
@@ -25,7 +29,7 @@ db = firestore.client()
 
 
 def get_store_data_from_firebase() -> str:
-    """Truy vấn cả Dịch vụ (services) và Sản phẩm (products) từ Firestore."""
+    """Truy vấn dịch vụ và sản phẩm từ Firestore."""
     info_parts = []
 
     # Lấy danh mục Dịch vụ
@@ -79,25 +83,41 @@ def get_store_data_from_firebase() -> str:
     return "Vui lòng tham khảo thông tin chi tiết trên ứng dụng.\n"
 
 
-# 2. Cấu hình đường dẫn và Nạp mô hình MLX
-MODEL_PATH = Path(
-    os.environ.get(
-        "HAIR_AI_MODEL_PATH",
-        Path(__file__).resolve().parent / "fused_model",
-    )
-).expanduser()
-if not MODEL_PATH.is_absolute():
-    MODEL_PATH = (Path(__file__).resolve().parent / MODEL_PATH).resolve()
+# ---------------------------------------------------------
+# 2. Xử lý đường dẫn và Nạp mô hình Transformers (Cross-Platform)
+# ---------------------------------------------------------
+kaggle_dataset = os.environ.get("KAGGLE_DATASET_PATH")
+
+if kaggle_dataset:
+    print(f"Đang tải model weights từ Kaggle Dataset: {kaggle_dataset}...")
+    download_dir = kagglehub.dataset_download(kaggle_dataset)
+    MODEL_PATH = Path(download_dir) / "fused_model"
+else:
+    MODEL_PATH = Path(
+        os.environ.get(
+            "HAIR_AI_MODEL_PATH",
+            Path(__file__).resolve().parent / "fused_model",
+        )
+    ).expanduser()
+    if not MODEL_PATH.is_absolute():
+        MODEL_PATH = (Path(__file__).resolve().parent / MODEL_PATH).resolve()
 
 if not MODEL_PATH.is_dir():
     raise RuntimeError(f"Không tìm thấy thư mục mô hình: {MODEL_PATH}")
 
-print(f"Đang nạp mô hình MLX từ {MODEL_PATH}...")
-model, tokenizer = mlx_lm.load(str(MODEL_PATH))
+print(f"Đang nạp mô hình từ {MODEL_PATH}...")
+tokenizer = AutoTokenizer.from_pretrained(str(MODEL_PATH))
+model = AutoModelForCausalLM.from_pretrained(
+    str(MODEL_PATH),
+    torch_dtype=torch.float32,
+    device_map="auto"
+)
 print("Đã nạp mô hình thành công!")
 
 
+# ---------------------------------------------------------
 # 3. Schema Pydantic
+# ---------------------------------------------------------
 class Preferences(BaseModel):
     hairType: Optional[str] = None
     hairLength: Optional[str] = None
@@ -108,35 +128,55 @@ class Preferences(BaseModel):
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     preferences: Optional[Preferences] = None
-    # The app includes up to eight previous messages plus the current user message.
     history: Optional[List[Dict[str, Any]]] = Field(default=None, max_length=9)
-    # Keep a safe ceiling, while the system prompt asks for a concise complete reply.
     max_tokens: int = Field(default=512, ge=32, le=1024)
 
 
 class FaceConsultRequest(BaseModel):
-    """Normalized geometric measurements computed on-device from face landmarks."""
     face_aspect_ratio: float = Field(gt=0.5, le=3.0)
     forehead_to_cheek_ratio: float = Field(gt=0.3, le=1.5)
     jaw_to_cheek_ratio: float = Field(gt=0.3, le=1.5)
     forehead_to_jaw_ratio: float = Field(gt=0.3, le=2.5)
 
 
-# 4. API Endpoints
+# ---------------------------------------------------------
+# 4. Helper Function: Sinh văn bản qua Transformers
+# ---------------------------------------------------------
+def generate_response(messages: List[Dict[str, str]], max_new_tokens: int = 512, temperature: float = 0.6) -> str:
+    formatted_prompt = tokenizer.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=True
+    )
+    inputs = tokenizer(formatted_prompt, return_tensors="pt").to(model.device)
+
+    with torch.no_grad():
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            top_p=0.9,
+            repetition_penalty=1.15,
+            do_sample=True,
+            pad_token_id=tokenizer.eos_token_id
+        )
+
+    input_length = inputs["input_ids"].shape[1]
+    generated_tokens = outputs[0][input_length:]
+    return tokenizer.decode(generated_tokens, skip_special_tokens=True)
+
+
+# ---------------------------------------------------------
+# 5. API Endpoints
+# ---------------------------------------------------------
 @app.get("/health")
 async def health_endpoint():
     return {"success": True, "model_loaded": True, "model": MODEL_PATH.name}
 
 
 def classify_face_shape(measurements: FaceConsultRequest) -> str:
-    """Classify approximate face shape from normalized MediaPipe landmark ratios."""
     aspect = measurements.face_aspect_ratio
     forehead_jaw = measurements.forehead_to_jaw_ratio
     jaw_cheek = measurements.jaw_to_cheek_ratio
 
-    # Prefer the forehead/jaw silhouette when it is distinctive. The face-length
-    # threshold is intentionally conservative because landmark-based lengths vary
-    # with camera distance and hairline visibility.
     if forehead_jaw >= 1.16 and jaw_cheek < 0.84:
         return "Heart"
     if jaw_cheek >= 0.88 and 0.90 <= forehead_jaw <= 1.10:
@@ -150,7 +190,6 @@ def classify_face_shape(measurements: FaceConsultRequest) -> str:
 
 @app.post("/api/consult-face")
 async def consult_face_endpoint(request: FaceConsultRequest):
-    """Return a haircut consultation; the request contains ratios, never an image."""
     try:
         shape = classify_face_shape(request)
         dynamic_store_info = get_store_data_from_firebase()
@@ -173,20 +212,11 @@ async def consult_face_endpoint(request: FaceConsultRequest):
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt},
         ]
-        formatted_prompt = tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
-        response = mlx_lm.generate(
-            model,
-            tokenizer,
-            prompt=formatted_prompt,
-            max_tokens=512,
-            sampler=mlx_lm.sample_utils.make_sampler(temp=0.45, top_p=0.85),
-            logits_processors=[mlx_lm.sample_utils.make_repetition_penalty(1.15)],
-            verbose=False,
-        )
-        reply = re.sub(r"\*\*|__|`", "", response.strip()).strip()
+
+        response_text = generate_response(messages, max_new_tokens=512, temperature=0.45)
+        reply = re.sub(r"\*\*|__|`", "", response_text.strip()).strip()
         reply = re.sub(r"tóc\s+dài\s+tay", "tóc dài", reply, flags=re.IGNORECASE)
+
         if not reply:
             raise HTTPException(status_code=502, detail="Mô hình chưa tạo được tư vấn.")
         return {"face_shape": shape, "reply": reply, "success": True}
@@ -203,7 +233,6 @@ async def chat_endpoint(request: ChatRequest):
         if not prompt:
             raise HTTPException(status_code=422, detail="Vui lòng nhập câu hỏi.")
 
-        # Lấy dữ liệu dịch vụ + sản phẩm từ Firebase
         dynamic_store_info = get_store_data_from_firebase()
 
         system_prompt = (
@@ -261,27 +290,9 @@ async def chat_endpoint(request: ChatRequest):
         ):
             messages.append({"role": "user", "content": prompt})
 
-        formatted_prompt = tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
-        # MLX-LM applies repetition penalties as a logits processor, not as a
-        # make_sampler argument.
-        sampler = mlx_lm.sample_utils.make_sampler(temp=0.6, top_p=0.9)
-        logits_processors = [
-            mlx_lm.sample_utils.make_repetition_penalty(1.15)
-        ]
+        response_text = generate_response(messages, max_new_tokens=request.max_tokens, temperature=0.6)
 
-        response = mlx_lm.generate(
-                model,
-                tokenizer,
-                prompt=formatted_prompt,
-                max_tokens=request.max_tokens,
-                sampler=sampler,
-                logits_processors=logits_processors,
-                verbose=False,
-        )
-
-        answer = re.sub(r"tóc\s+dài\s+tay", "tóc dài", response.strip(), flags=re.IGNORECASE)
+        answer = re.sub(r"tóc\s+dài\s+tay", "tóc dài", response_text.strip(), flags=re.IGNORECASE)
         answer = re.sub(
             r"cắt theo hình bàn chèn hoặc cái ca lô",
             "có hai bên gọn và phần đỉnh tạo độ phồng nhẹ",
@@ -289,11 +300,12 @@ async def chat_endpoint(request: ChatRequest):
             flags=re.IGNORECASE,
         )
         answer = re.sub(r"\*\*|__|`", "", answer).strip()
-        # If generation reaches its token ceiling, discard a dangling final sentence/item.
+
         if answer and not re.search(r"(?<!\d)[.!?…。！？]$", answer):
             endings = list(re.finditer(r"(?<!\d)[.!?…](?=\s|$)", answer))
             if endings:
                 answer = answer[:endings[-1].end()].rstrip()
+
         if not answer:
             raise HTTPException(
                 status_code=502, detail="Mô hình chưa tạo được câu trả lời."
