@@ -19,4 +19,5 @@ public class Config {
     public static boolean isSupabaseConfigured() {
         return !SUPABASE_URL.contains("YOUR_PROJECT_REF") && !SUPABASE_PUBLISHABLE_KEY.contains("YOUR_");
     }
+    public static final String BASE_URL = "https://chipheo-barber-ai.onrender.com/";
 }
