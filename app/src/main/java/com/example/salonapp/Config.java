@@ -14,10 +14,10 @@ public class Config {
     public static final String SUPABASE_PUBLISHABLE_KEY = "sb_publishable_SP-FMcj7l3KzeG1ZQRm-gw_NmrIW9bw";
     // Debug builds call the Mac over the LAN so both emulators and physical phones can reach it.
     // Update this address if the Mac receives a different LAN IP.
-    public static final String LOCAL_HAIR_AI_URL = "http://192.168.110.60:8000/api/chat";
-    public static final String LOCAL_FACE_CONSULT_URL = "http://192.168.110.60:8000/api/consult-face";
+    public static final String BASE_URL = "https://chipheo-barber-ai.onrender.com/";
+    public static final String LOCAL_HAIR_AI_URL = "https://chipheo-barber-ai.onrender.com/api/chat";
+    public static final String LOCAL_FACE_CONSULT_URL = "https://chipheo-barber-ai.onrender.com/api/consult-face";
     public static boolean isSupabaseConfigured() {
         return !SUPABASE_URL.contains("YOUR_PROJECT_REF") && !SUPABASE_PUBLISHABLE_KEY.contains("YOUR_");
     }
-    public static final String BASE_URL = "https://chipheo-barber-ai.onrender.com/";
 }
