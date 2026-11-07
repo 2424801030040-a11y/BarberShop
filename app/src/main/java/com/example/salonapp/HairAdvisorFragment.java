@@ -29,7 +29,7 @@ import java.util.*;
 
 /** Shop-specific text consultation for hair styling, color and care. */
 public class HairAdvisorFragment extends Fragment {
-    private static final String WELCOME = "Chào bạn! Mình có thể tư vấn kiểu cắt, uốn, nhuộm và chăm sóc tóc. Hãy cho biết tóc hiện tại, điều bạn muốn thay đổi và mức chăm sóc bạn thấy thoải mái.";
+    private static final String WELCOME = "Chào bạn! Mình là tư vấn viên AI của Chí Phèo BarberShop. Mình có thể giúp bạn chọn kiểu cắt, uốn, nhuộm và cách chăm sóc tóc phù hợp. Bạn muốn thay đổi điều gì ở mái tóc của mình?";
     private EditText question;
     private MaterialButton sendButton;
     private LinearLayout messages;

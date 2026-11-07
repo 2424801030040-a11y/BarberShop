@@ -6,6 +6,7 @@ import android.widget.*;
 import androidx.core.content.ContextCompat;
 import androidx.credentials.*;
 import androidx.credentials.exceptions.GetCredentialException;
+import androidx.credentials.exceptions.GetCredentialCancellationException;
 import androidx.credentials.exceptions.NoCredentialException;
 import com.google.android.libraries.identity.googleid.*;
 import com.google.firebase.auth.GoogleAuthProvider;
@@ -34,44 +35,40 @@ public class LoginActivity extends AppCompatActivity {
         });
     }
     private void googleSignIn() {
-        requestGoogleCredential(false);
-    }
-
-    /** First try the account picker, then use Google's explicit button flow if it has no entry. */
-    private void requestGoogleCredential(boolean explicitButtonFlow) {
-        CredentialOption option;
-        if (explicitButtonFlow) {
-            option = new GetSignInWithGoogleOption.Builder(getString(R.string.default_web_client_id)).build();
-        } else {
-            option = new GetGoogleIdOption.Builder()
-                .setFilterByAuthorizedAccounts(false)
-                .setServerClientId(getString(R.string.default_web_client_id))
-                .build();
-        }
-        GetCredentialRequest req = new GetCredentialRequest.Builder().addCredentialOption(option).build();
-        CredentialManager.create(this).getCredentialAsync(this, req, null, ContextCompat.getMainExecutor(this),
+        CredentialOption option = new GetSignInWithGoogleOption.Builder(
+            getString(R.string.default_web_client_id)
+        ).build();
+        GetCredentialRequest req = new GetCredentialRequest.Builder()
+            .addCredentialOption(option)
+            .build();
+        CredentialManager.create(this).getCredentialAsync(this, req, null,
+            ContextCompat.getMainExecutor(this),
             new CredentialManagerCallback<GetCredentialResponse, GetCredentialException>() {
-                @Override public void onResult(GetCredentialResponse r) {
+                @Override public void onResult(GetCredentialResponse response) {
                     try {
-                        Credential c = r.getCredential();
-                        if (c instanceof CustomCredential && GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL.equals(c.getType())) {
-                            GoogleIdTokenCredential g = GoogleIdTokenCredential.createFrom(((CustomCredential) c).getData());
-                            auth.signInWithCredential(GoogleAuthProvider.getCredential(g.getIdToken(), null))
-                                .addOnSuccessListener(x -> goHome()).addOnFailureListener(e -> toast(describeGoogleError(e)));
-                        } else {
-                            toast("Google did not return a sign-in token. Please try again.");
+                        Credential credential = response.getCredential();
+                        if (!(credential instanceof CustomCredential)
+                            || !GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL.equals(credential.getType())) {
+                            toast("Google không trả về thông tin đăng nhập. Vui lòng thử lại.");
+                            return;
                         }
-                    } catch (Exception e) { toast(e.getMessage()); }
-                }
-                @Override public void onError(GetCredentialException e) {
-                    if (!explicitButtonFlow && e instanceof NoCredentialException) {
-                        requestGoogleCredential(true);
-                        return;
+                        GoogleIdTokenCredential google = GoogleIdTokenCredential.createFrom(
+                            ((CustomCredential) credential).getData());
+                        auth.signInWithCredential(GoogleAuthProvider.getCredential(google.getIdToken(), null))
+                            .addOnSuccessListener(result -> goHome())
+                            .addOnFailureListener(error -> toast(describeGoogleError(error)));
+                    } catch (Exception error) {
+                        toast("Không thể hoàn tất đăng nhập Google. Vui lòng thử lại.");
                     }
-                    if (e instanceof NoCredentialException) {
-                        toast("No Google account is available on this device. Add one in Android Settings > Passwords & accounts, then try again.");
+                }
+
+                @Override public void onError(GetCredentialException error) {
+                    if (error instanceof GetCredentialCancellationException) {
+                        toast("Bạn đã đóng bước đăng nhập Google. Hãy bấm Tiếp tục với Google và chọn tài khoản để tiếp tục.");
+                    } else if (error instanceof NoCredentialException) {
+                        toast("Thiết bị chưa có tài khoản Google. Hãy thêm tài khoản trong Cài đặt rồi thử lại.");
                     } else {
-                        toast(describeGoogleError(e));
+                        toast(describeGoogleError(error));
                     }
                 }
             });
@@ -80,12 +77,12 @@ public class LoginActivity extends AppCompatActivity {
         String detail = error == null || error.getMessage() == null ? "" : error.getMessage();
         String normalized = detail.toLowerCase(java.util.Locale.ROOT);
         if (normalized.contains("[16]") || normalized.contains("reauth")) {
-            return "Google needs you to re-authenticate the account on this emulator. In Android Settings > Passwords & accounts, remove and add the Google account again, then retry. Also check internet access and automatic date/time.";
+            return "Tài khoản Google cần xác thực lại trên thiết bị. Hãy kiểm tra kết nối mạng, ngày giờ tự động và đăng nhập lại tài khoản Google trong Cài đặt.";
         }
         if (normalized.contains("[10]") || normalized.contains("developer_error")) {
-            return "Google OAuth configuration was rejected. Check that Google sign-in is enabled in Firebase Authentication and that the Android and Web OAuth clients belong to this Firebase project.";
+            return "Firebase từ chối cấu hình Google Sign-In. Hãy kiểm tra nhà cung cấp Google và OAuth client trong Firebase.";
         }
-        return "Google sign-in failed: " + (detail.isEmpty() ? "Please try again." : detail);
+        return "Đăng nhập Google thất bại. Vui lòng thử lại.";
     }
     private String email() { return etEmail.getText().toString().trim(); }
     private String pass() { return etPass.getText().toString(); }
