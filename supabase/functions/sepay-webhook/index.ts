@@ -219,7 +219,11 @@ Deno.serve(async (request: Request) => {
     const begin = await firestoreRequest(":beginTransaction", { method: "POST", body: JSON.stringify({ options: { readWrite: {} } }) });
     if (!begin.ok) throw new Error(`Could not start Firestore transaction (${begin.status}).`);
     const { transaction } = await begin.json();
-    const reads = await readInTransaction(transaction, orderName ? [eventName, orderName] : [eventName]);
+    const knownUid = order ? fieldString(order, "userId") : null;
+    const accountName = knownUid ? documentName(`users/${knownUid}`) : null;
+    const reads = await readInTransaction(transaction, orderName
+      ? [eventName, orderName, ...(accountName ? [accountName] : [])]
+      : [eventName]);
     const previousEvent = reads.get(eventName);
     // A prior delivery can be recorded as unmatched (for example, while an order
     // was still being created). Let SePay retries re-evaluate those events. Only
@@ -286,6 +290,23 @@ Deno.serve(async (request: Request) => {
         orderUpdates.status = "completed";
         orderUpdates.completedAt = paidAt;
         orderUpdateMask.push("status", "completedAt");
+        if (currentOrder.fields?.pointsAwarded?.booleanValue !== true) {
+          const total = fieldNumber(currentOrder, "total") ?? 0;
+          const pointsEarned = Number.isSafeInteger(total) && total >= 0 ? Math.floor(total / 10000) : 0;
+          orderUpdates.pointsAwarded = true;
+          orderUpdates.pointsEarned = pointsEarned;
+          orderUpdateMask.push("pointsAwarded", "pointsEarned");
+          const uid = fieldString(currentOrder, "userId"), account = accountName ? reads.get(accountName) : null;
+          if (uid && accountName && pointsEarned > 0) {
+            const balance = fieldNumber(account || undefined, "loyaltyPoints") ?? 0;
+            if (!Number.isSafeInteger(balance) || balance < 0 || balance + pointsEarned > Number.MAX_SAFE_INTEGER) throw new Error("Invalid loyalty points balance.");
+            writes.push({
+              update: { name: accountName, fields: firestoreFields({ loyaltyPoints: balance + pointsEarned }) },
+              updateMask: { fieldPaths: ["loyaltyPoints"] },
+              currentDocument: account ? { updateTime: account.updateTime } : { exists: false },
+            });
+          }
+        }
       }
       writes.push({
         update: { name: orderName, fields: firestoreFields(orderUpdates) },

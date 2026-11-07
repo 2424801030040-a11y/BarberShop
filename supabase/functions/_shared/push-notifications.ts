@@ -9,7 +9,7 @@ export class HttpError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
 }
 
-export async function verifyStaff(request: Request): Promise<string> {
+async function verifiedFirebaseUser(request: Request): Promise<JsonRecord> {
   const idToken = request.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
   const apiKey = Deno.env.get("FIREBASE_WEB_API_KEY");
   if (!idToken) throw new HttpError("Vui lòng đăng nhập lại.", 401);
@@ -21,9 +21,26 @@ export async function verifyStaff(request: Request): Promise<string> {
   const result = await response.json();
   const user = Array.isArray(result.users) ? result.users[0] : null;
   if (typeof user?.localId !== "string") throw new HttpError("Không xác minh được tài khoản.", 401);
+  return user;
+}
+
+export async function verifyUser(request: Request): Promise<string> {
+  return (await verifiedFirebaseUser(request)).localId;
+}
+
+export async function verifyStaff(request: Request): Promise<string> {
+  const user = await verifiedFirebaseUser(request);
   let claims: JsonRecord = {};
   try { claims = typeof user.customAttributes === "string" ? JSON.parse(user.customAttributes) : {}; } catch { /* stay unauthorized */ }
   if (claims.admin !== true && claims.staff !== true) throw new HttpError("Tài khoản chưa được cấp quyền nhân viên.", 403);
+  return user.localId;
+}
+
+export async function verifyAdmin(request: Request): Promise<string> {
+  const user = await verifiedFirebaseUser(request);
+  let claims: JsonRecord = {};
+  try { claims = typeof user.customAttributes === "string" ? JSON.parse(user.customAttributes) : {}; } catch { /* stay unauthorized */ }
+  if (claims.admin !== true) throw new HttpError("Tài khoản chưa được cấp quyền quản trị.", 403);
   return user.localId;
 }
 
@@ -113,8 +130,8 @@ export function firestoreField(document: JsonRecord | null, name: string): any {
   return decodeFirestore(document?.fields?.[name]);
 }
 
-export async function createInAppNotification(notification: JsonRecord): Promise<string> {
-  const id = crypto.randomUUID();
+export async function createInAppNotification(notification: JsonRecord, notificationId = crypto.randomUUID()): Promise<string> {
+  const id = notificationId;
   const fields = Object.fromEntries(Object.entries({ ...notification, createdAt: new Date() }).map(([key, value]) => [key, encodeFirestore(value)]));
   const response = await firestoreRequest(`/notifications?documentId=${encodeURIComponent(id)}`, { method: "POST", body: JSON.stringify({ fields }) });
   if (!response.ok) throw new Error(`Firestore notification write failed (${response.status}).`);

@@ -3,6 +3,7 @@ import android.Manifest;
 import android.app.*;
 import android.content.*;
 import android.content.pm.PackageManager;
+import android.graphics.BitmapFactory;
 import android.os.Build;
 import androidx.core.app.NotificationCompat;
 import androidx.work.*;
@@ -23,7 +24,10 @@ public class Notify {
         if (notificationId != null) intent.putExtra(MainActivity.EXTRA_NOTIFICATION_ID, notificationId);
         PendingIntent pi = PendingIntent.getActivity(c, notificationId == null ? (int) System.currentTimeMillis() : notificationId.hashCode(), intent,
             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-        nm.notify((int) System.currentTimeMillis(), new NotificationCompat.Builder(c, CH).setSmallIcon(android.R.drawable.ic_dialog_info)
+        nm.notify((int) System.currentTimeMillis(), new NotificationCompat.Builder(c, CH)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setLargeIcon(BitmapFactory.decodeResource(c.getResources(), R.drawable.ic_brand_mark))
+            .setColor(0xFF8D3C32)
             .setContentTitle(title).setContentText(body).setContentIntent(pi).setAutoCancel(true).build());
     }
     /** Local reminder 1 hour before the appointment (works without a server). */

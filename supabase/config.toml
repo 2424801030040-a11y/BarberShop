@@ -21,3 +21,15 @@ verify_jwt = false
 
 [functions.expire-unpaid-orders]
 verify_jwt = false
+
+[functions.hair-advisor]
+verify_jwt = false
+
+[functions.loyalty]
+verify_jwt = false
+
+[functions.notify-shop-event]
+verify_jwt = false
+
+[functions.manage-staff]
+verify_jwt = false

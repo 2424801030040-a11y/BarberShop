@@ -9,9 +9,13 @@ public class Config {
     public static final String BANK_ACCOUNT = "96247MLSM8"; // SePay BIDV virtual account (VA)
     public static final String BANK_ACCOUNT_NAME = "BUI NGOC ANH";
     // Supabase project URL and publishable key are public client config, never service secrets.
-    // Set these after creating/linking the Supabase project described in supabase/README.md.
+    // Public Supabase project URL and publishable key used by trusted Edge Function endpoints.
     public static final String SUPABASE_URL = "https://qyvsjahijqtpskwslqku.supabase.co";
     public static final String SUPABASE_PUBLISHABLE_KEY = "sb_publishable_SP-FMcj7l3KzeG1ZQRm-gw_NmrIW9bw";
+    // Debug builds call the Mac over the LAN so both emulators and physical phones can reach it.
+    // Update this address if the Mac receives a different LAN IP.
+    public static final String LOCAL_HAIR_AI_URL = "http://192.168.110.60:8000/api/chat";
+    public static final String LOCAL_FACE_CONSULT_URL = "http://192.168.110.60:8000/api/consult-face";
     public static boolean isSupabaseConfigured() {
         return !SUPABASE_URL.contains("YOUR_PROJECT_REF") && !SUPABASE_PUBLISHABLE_KEY.contains("YOUR_");
     }

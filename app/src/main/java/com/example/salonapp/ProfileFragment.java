@@ -16,32 +16,43 @@ import java.util.*;
 import okhttp3.*;
 import org.json.JSONObject;
 public class ProfileFragment extends Fragment {
-    private ImageView avatar; private DocumentReference ref;
+    private ImageView avatar; private TextView avatarInitials; private DocumentReference ref;
+    private String avatarUrl;
     private final ActivityResultLauncher<String> picker = registerForActivityResult(new ActivityResultContracts.GetContent(), uri -> { if (uri != null) upload(uri); });
     @Nullable @Override public View onCreateView(@NonNull LayoutInflater inf, @Nullable ViewGroup c, @Nullable Bundle s) {
         View v = inf.inflate(R.layout.fragment_profile, c, false);
         FirebaseUser u = FirebaseAuth.getInstance().getCurrentUser();
         FirebaseFirestore db = FirebaseFirestore.getInstance();
         avatar = v.findViewById(R.id.ivAvatar);
+        avatarInitials = v.findViewById(R.id.tvAvatarInitials);
         EditText name = v.findViewById(R.id.etName), phone = v.findViewById(R.id.etPhone);
         ((TextView) v.findViewById(R.id.tvEmail)).setText(u.getEmail() != null && !u.getEmail().isEmpty() ? u.getEmail() : u.getPhoneNumber());
         ref = db.collection("users").document(u.getUid());
+        String authName = u.getDisplayName();
+        showInitials(authName);
         ref.get().addOnSuccessListener(d -> {
-            name.setText(d.getString("name") != null ? d.getString("name") : u.getDisplayName()); phone.setText(d.getString("phone"));
+            String profileName = d.getString("name");
+            if (profileName == null || profileName.trim().isEmpty()) profileName = authName;
+            name.setText(profileName); phone.setText(d.getString("phone"));
+            showInitials(profileName);
             Map<String, Object> identity = new HashMap<>();
             if (u.getEmail() != null && !u.getEmail().isEmpty()) identity.put("email", u.getEmail());
             if ((d.getString("name") == null || d.getString("name").trim().isEmpty())
                     && u.getDisplayName() != null && !u.getDisplayName().trim().isEmpty())
                 identity.put("name", u.getDisplayName());
             if (!identity.isEmpty()) ref.set(identity, SetOptions.merge());
-            String url = d.getString("avatarUrl"); if (url == null && u.getPhotoUrl() != null) url = u.getPhotoUrl().toString();
-            if (url != null && isAdded()) Glide.with(this).load(url).circleCrop().into(avatar);
+            avatarUrl = d.getString("avatarUrl");
+            if ((avatarUrl == null || avatarUrl.trim().isEmpty()) && u.getPhotoUrl() != null)
+                avatarUrl = u.getPhotoUrl().toString();
+            showAvatar(avatarUrl);
         });
         v.findViewById(R.id.btnPhoto).setOnClickListener(x -> picker.launch("image/*"));
         v.findViewById(R.id.btnAddresses).setOnClickListener(x -> getParentFragmentManager().beginTransaction().replace(R.id.container, new AddressFragment()).addToBackStack(null).commit());
         v.findViewById(R.id.btnAppts).setOnClickListener(x -> getParentFragmentManager().beginTransaction().replace(R.id.container, new AppointmentsFragment()).addToBackStack(null).commit());
         v.findViewById(R.id.btnSave).setOnClickListener(x -> {
-            Map<String, Object> m = new HashMap<>(); m.put("name", name.getText().toString().trim()); m.put("phone", phone.getText().toString().trim());
+            String savedName = name.getText().toString().trim();
+            Map<String, Object> m = new HashMap<>(); m.put("name", savedName); m.put("phone", phone.getText().toString().trim());
+            if (avatarUrl == null || avatarUrl.trim().isEmpty()) showInitials(savedName);
             ref.set(m, SetOptions.merge()).addOnSuccessListener(r -> toast("Đã lưu hồ sơ"));
         });
         v.findViewById(R.id.btnOrders).setOnClickListener(x -> getParentFragmentManager().beginTransaction().replace(R.id.container, new OrdersFragment()).addToBackStack(null).commit());
@@ -76,11 +87,34 @@ public class ProfileFragment extends Fragment {
                     requireActivity().runOnUiThread(() -> {
                         Map<String, Object> m = new HashMap<>(); m.put("avatarUrl", url);
                         ref.set(m, SetOptions.merge());
-                        Glide.with(this).load(url).circleCrop().into(avatar); toast("Đã cập nhật ảnh");
+                        avatarUrl = url;
+                        showAvatar(url); toast("Đã cập nhật ảnh");
                     });
                 }
             } catch (Exception e) { if (isAdded()) requireActivity().runOnUiThread(() -> toast("Tải ảnh thất bại: " + e.getMessage())); }
         }).start();
+    }
+    private void showInitials(String name) {
+        if (avatarInitials == null) return;
+        avatarInitials.setText(initials(name));
+        avatarInitials.setVisibility(View.VISIBLE);
+        if (avatar != null) avatar.setVisibility(View.GONE);
+    }
+    private void showAvatar(String url) {
+        if (avatar == null || avatarInitials == null) return;
+        if (url == null || url.trim().isEmpty()) {
+            showInitials(null);
+            return;
+        }
+        avatarInitials.setVisibility(View.GONE);
+        avatar.setVisibility(View.VISIBLE);
+        Glide.with(this).load(url).circleCrop().into(avatar);
+    }
+    private String initials(String name) {
+        if (name == null || name.trim().isEmpty()) return "?";
+        String[] parts = name.trim().replaceAll("\\s+", " ").split(" ");
+        if (parts.length == 1) return parts[0].substring(0, 1).toUpperCase(Locale.ROOT);
+        return (parts[0].substring(0, 1) + parts[parts.length - 1].substring(0, 1)).toUpperCase(Locale.ROOT);
     }
     private void toast(String m) { if (getContext() != null) Toast.makeText(getContext(), m, Toast.LENGTH_LONG).show(); }
 }

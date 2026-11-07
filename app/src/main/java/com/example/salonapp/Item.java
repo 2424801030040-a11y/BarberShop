@@ -1,6 +1,6 @@
 package com.example.salonapp;
 public class Item {
-    public String id, name, description, imageUrl;
+    public String id, name, description, imageUrl, mapUrl;
     public double price;
     public int qty;
     public String branchId, phone, category;

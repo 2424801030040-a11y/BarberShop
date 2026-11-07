@@ -93,6 +93,11 @@ function documentName(path: string): string {
   return `${documentResourcePrefix()}/${path}`;
 }
 
+async function voucherUsageKey(code: string): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(code)));
+  return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 async function fs(path: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);
   headers.set("authorization", `Bearer ${await firestoreToken()}`);
@@ -142,6 +147,19 @@ async function runQuery(collectionId: string, field: string, value: string): Pro
   return (result as Array<Record<string, any>>).flatMap((row) => row.document ? [row.document] : []);
 }
 
+async function findPersonalVoucher(uid: string, code: string): Promise<Record<string, any> | null> {
+  const response = await fs(`/users/${encodeURIComponent(uid)}:runQuery`, { method: "POST", body: JSON.stringify({ structuredQuery: {
+    from: [{ collectionId: "vouchers" }],
+    where: { fieldFilter: { field: { fieldPath: "code" }, op: "EQUAL", value: { stringValue: code } } },
+    limit: 2,
+  } }) });
+  if (!response.ok) throw new Error(`Personal voucher lookup failed (${await responseProblem(response)}).`);
+  const rows = await response.json() as Array<Record<string, any>>;
+  const matches = rows.flatMap(row => row.document ? [row.document] : []);
+  if (matches.length > 1) throw new Error("Duplicate personal voucher codes found.");
+  return matches[0] || null;
+}
+
 async function transactionGet(transaction: string, names: string[]): Promise<Map<string, Record<string, any> | null>> {
   const docs = new Map<string, Record<string, any> | null>();
   const prefix = `${documentResourcePrefix()}/`;
@@ -187,17 +205,22 @@ Deno.serve(async (request: Request) => {
     const orderName = documentName(`orders/${requestId}`);
     const productNames = productIds.map((id) => documentName(`products/${id}`));
     const promo = typeof promoCode === "string" ? promoCode.trim().toUpperCase() : "";
+    const voucherUsageId = promo ? await voucherUsageKey("code:" + promo) : null;
+    const voucherUsagePath = voucherUsageId ? `users/${uid}/voucherUsages/${voucherUsageId}` : null;
+    const voucherUsageName = voucherUsagePath ? documentName(voucherUsagePath) : null;
     stage = "lookup_promotion";
     const promoMatches = promo ? await runQuery("promotions", "code", promo) : [];
     if (promoMatches.length > 1) return failed("Có nhiều mã giảm giá trùng nhau. Hãy liên hệ cửa hàng.", 409);
-    if (promo && promoMatches.length === 0) return failed("Mã khuyến mãi không hợp lệ.");
+    const personalVoucher = promo && promoMatches.length === 0 ? await findPersonalVoucher(uid, promo) : null;
+    if (promo && promoMatches.length === 0 && !personalVoucher) return failed("Mã khuyến mãi hoặc voucher không hợp lệ.");
     const promoName = promoMatches[0]?.name;
+    const personalVoucherName = personalVoucher?.name;
 
     stage = "begin_firestore_transaction";
     const begin = await fs(":beginTransaction", { method: "POST", body: JSON.stringify({ options: { readWrite: {} } }) });
     if (!begin.ok) throw new Error(`Could not start Firestore transaction (${await responseProblem(begin)}).`);
     const { transaction } = await begin.json();
-    const names = [orderName, ...productNames, ...(promoName ? [promoName] : [])];
+    const names = [orderName, ...productNames, ...(promoName ? [promoName] : []), ...(personalVoucherName ? [personalVoucherName] : []), ...(voucherUsageName ? [voucherUsageName] : [])];
     stage = "read_firestore_transaction";
     const docs = await transactionGet(transaction, names);
     const existing = docs.get(orderName);
@@ -217,6 +240,9 @@ Deno.serve(async (request: Request) => {
       const result = { orderId: requestId, orderCode: read(existing, "orderCode"), total: read(existing, "total"), reused: true };
       return json(result);
     }
+    if (voucherUsageName && docs.get(voucherUsageName)) {
+      return failed("Mỗi tài khoản chỉ được sử dụng mã voucher này một lần.", 409);
+    }
 
     stage = "validate_stock_and_promotion";
     let subtotal = 0;
@@ -235,6 +261,9 @@ Deno.serve(async (request: Request) => {
     }
 
     let discountPercent = 0;
+    let configuredDiscountAmount = 0;
+    let fixedDiscount = false;
+    let usedVoucherPath: string | null = null;
     if (promoName) {
       const promotion = docs.get(promoName);
       if (!promotion) return failed("Mã khuyến mãi không còn tồn tại.", 409);
@@ -242,10 +271,34 @@ Deno.serve(async (request: Request) => {
       const endsAt = read(promotion, "endsAt");
       const minSubtotal = Number(read(promotion, "minSubtotal") || 0);
       if (read(promotion, "active") === false || (typeof startsAt === "number" && startsAt > Date.now()) || (typeof endsAt === "number" && endsAt < Date.now()) || subtotal < minSubtotal) return failed("Mã khuyến mãi chưa có hiệu lực hoặc chưa đủ điều kiện áp dụng.", 409);
-      discountPercent = Number(read(promotion, "percent") || 0);
-      if (!Number.isFinite(discountPercent) || discountPercent < 0 || discountPercent > 100) return failed("Mã khuyến mãi có cấu hình không hợp lệ.", 409);
+      const percent = read(promotion, "percent"), amount = read(promotion, "discountAmount");
+      if ((percent !== null && amount !== null) || (percent === null && amount === null)) return failed("Mã khuyến mãi phải có đúng một mức giảm.", 409);
+      if (percent !== null) {
+        discountPercent = Number(percent);
+        if (!Number.isFinite(discountPercent) || discountPercent <= 0 || discountPercent > 100) return failed("Mã khuyến mãi có cấu hình không hợp lệ.", 409);
+      } else {
+        configuredDiscountAmount = Number(amount); fixedDiscount = true;
+        if (!Number.isSafeInteger(configuredDiscountAmount) || configuredDiscountAmount <= 0) return failed("Mã khuyến mãi có cấu hình không hợp lệ.", 409);
+      }
+    } else if (personalVoucherName) {
+      const voucher = docs.get(personalVoucherName);
+      if (!voucher || read(voucher, "status") !== "available") return failed("Voucher đã được sử dụng hoặc không còn hiệu lực.", 409);
+      const expiresAt = read(voucher, "expiresAt"), startsAt = read(voucher, "startsAt");
+      if ((typeof startsAt === "number" && startsAt > Date.now()) || (typeof expiresAt === "number" && expiresAt < Date.now())) return failed("Voucher đã hết hạn.", 409);
+      const minimum = Number(read(voucher, "minSubtotal") || 0);
+      if (!Number.isSafeInteger(minimum) || minimum < 0 || subtotal < minimum) return failed("Đơn hàng chưa đạt giá trị tối thiểu của voucher.", 409);
+      const percent = read(voucher, "percent"), amount = read(voucher, "discountAmount");
+      if ((percent !== null && amount !== null) || (percent === null && amount === null)) return failed("Voucher phải có đúng một mức giảm.", 409);
+      if (percent !== null) {
+        discountPercent = Number(percent);
+        if (!Number.isFinite(discountPercent) || discountPercent <= 0 || discountPercent > 100) return failed("Voucher có cấu hình không hợp lệ.", 409);
+      } else {
+        configuredDiscountAmount = Number(amount); fixedDiscount = true;
+        if (!Number.isSafeInteger(configuredDiscountAmount) || configuredDiscountAmount <= 0) return failed("Voucher có cấu hình không hợp lệ.", 409);
+      }
+      usedVoucherPath = personalVoucherName;
     }
-    const discount = Math.round(subtotal * discountPercent / 100);
+    const discount = fixedDiscount ? Math.min(subtotal, configuredDiscountAmount) : Math.round(subtotal * discountPercent / 100);
     const total = subtotal - discount;
     const orderCode = `CPB${requestId.replace(/[^A-Za-z0-9]/g, "").substring(0, 10).toUpperCase()}`;
     // The bank-transfer code and stock reservation are valid for 15 minutes.
@@ -263,14 +316,35 @@ Deno.serve(async (request: Request) => {
     writes.push({
       update: { name: orderName, fields: fields({
         userId: uid, items: orderItems, address: address.trim(), payment, paymentStatus: "unpaid", orderCode,
-        promoCode: promo, subtotal, discount, discountPercent, total, status: "pending", createdAt: new Date(),
+        promoCode: promo, subtotal, discount, discountPercent, discountAmount: fixedDiscount ? configuredDiscountAmount : 0, total, status: "pending", createdAt: new Date(),
         reservationExpiresAt: new Date(Date.now() + reservationMinutes * 60_000),
       }) },
       currentDocument: { exists: false },
     });
+    if (voucherUsageName) {
+      writes.push({
+        update: { name: voucherUsageName, fields: fields({ code: promo, orderId: requestId, usedAt: new Date() }) },
+        currentDocument: { exists: false },
+      });
+    }
+    if (usedVoucherPath) {
+      const voucher = docs.get(usedVoucherPath)!;
+      writes.push({
+        update: { name: usedVoucherPath, fields: fields({ status: "used", orderId: requestId, usedAt: new Date() }) },
+        updateMask: { fieldPaths: ["status", "orderId", "usedAt"] },
+        currentDocument: { updateTime: voucher.updateTime },
+      });
+    }
     stage = "commit_firestore_order";
     const commit = await fs(":commit", { method: "POST", body: JSON.stringify({ transaction, writes }) });
-    if (!commit.ok) throw new Error(`Firestore order commit failed (${await responseProblem(commit)}).`);
+    if (!commit.ok) {
+      if (commit.status === 409 && voucherUsagePath) {
+        const usage = await fs(`/${voucherUsagePath}`);
+        if (usage.ok) return failed("Mỗi tài khoản chỉ được sử dụng mã voucher này một lần.", 409);
+      }
+      if (commit.status === 409 || commit.status === 412) return failed("Đơn hàng hoặc voucher vừa được cập nhật. Vui lòng kiểm tra lại và thử lại.", 409);
+      throw new Error(`Firestore order commit failed (${await responseProblem(commit)}).`);
+    }
     return json({ orderId: requestId, orderCode, total, subtotal, discount });
   } catch (error) {
     console.error("Order creation failed", { stage, error: error instanceof Error ? error.message : String(error) });

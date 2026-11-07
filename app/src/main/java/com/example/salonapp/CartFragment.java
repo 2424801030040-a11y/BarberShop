@@ -40,7 +40,7 @@ import okhttp3.RequestBody;
 import okhttp3.Response;
 import org.json.JSONObject;
 public class CartFragment extends Fragment {
-    private RecyclerView list; private TextCardAdapter adapter; private TextView total; private RadioGroup rg; private Button btnOrder;
+    private RecyclerView list; private CartItemAdapter adapter; private TextView total; private RadioGroup rg; private Button btnOrder;
     private EditText promoInput;
     private final Map<String, PromotionOffer> promotionOffers = new HashMap<>();
     private String checkoutRequestId;
@@ -59,13 +59,20 @@ public class CartFragment extends Fragment {
     @Nullable @Override public View onCreateView(@NonNull LayoutInflater inf, @Nullable ViewGroup c, @Nullable Bundle s) {
         View v = inf.inflate(R.layout.fragment_cart, c, false);
         list = v.findViewById(R.id.rvCart); total = v.findViewById(R.id.tvTotal);
-        adapter = new TextCardAdapter();
-        adapter.setOnClick(pos -> {
-            Item it = Cart.items.get(pos);
-            new MaterialAlertDialogBuilder(requireContext()).setTitle(it.name).setItems(new String[]{"Tăng số lượng", "Giảm số lượng", "Xóa khỏi giỏ"}, (d, w) -> {
-                if (w == 0) { if (it.stock == null || it.qty < it.stock) it.qty++; else toast("Không đủ hàng trong kho"); } else if (w == 1 && it.qty > 1) it.qty--; else if (w == 2) Cart.items.remove(it);
-                refresh();
-            }).show();
+        adapter = new CartItemAdapter();
+        adapter.setOnQuantityChange((item, change) -> {
+            if (change > 0) {
+                if (item.stock != null && item.qty >= item.stock) {
+                    toast("Không đủ hàng trong kho");
+                    return;
+                }
+                item.qty++;
+            } else if (item.qty <= 1) {
+                Cart.items.remove(item);
+            } else {
+                item.qty--;
+            }
+            refresh();
         });
         ViewModeToggle.bind(requireContext(), list, v.findViewById(R.id.viewModeToggle));
         list.setAdapter(adapter);
@@ -79,7 +86,26 @@ public class CartFragment extends Fragment {
         List<String> addressRows = new ArrayList<>();
         List<String> promoCodes = new ArrayList<>();
         List<String> promoRows = new ArrayList<>();
+        List<DocumentSnapshot> promotionDocuments = new ArrayList<>();
+        List<DocumentSnapshot> rewardDocuments = new ArrayList<>();
         ArrayAdapter<String> promoAdapter = new ArrayAdapter<>(requireContext(), android.R.layout.simple_dropdown_item_1line, promoRows);
+        Runnable rebuildPromoOptions = () -> {
+            promoCodes.clear(); promoRows.clear(); promotionOffers.clear();
+            long now = System.currentTimeMillis();
+            for (DocumentSnapshot doc : promotionDocuments) {
+                String code = doc.getString("code");
+                if (code == null || code.trim().isEmpty() || Boolean.FALSE.equals(doc.getBoolean("active")) || isPromotionOutsideDates(doc, now)) continue;
+                Number percent = (Number) doc.get("percent"), amount = (Number) doc.get("discountAmount"), minimum = (Number) doc.get("minSubtotal");
+                addPromoOption(code, doc.getString("name"), percent == null ? 0 : percent.doubleValue(), amount == null ? 0 : amount.doubleValue(), minimum == null ? 0 : minimum.doubleValue(), promoCodes, promoRows);
+            }
+            for (DocumentSnapshot doc : rewardDocuments) {
+                String code = doc.getString("code");
+                if (code == null || code.trim().isEmpty() || !"available".equals(doc.getString("status")) || voucherExpired(doc, now)) continue;
+                Number percent = (Number) doc.get("percent"), amount = (Number) doc.get("discountAmount"), minimum = (Number) doc.get("minSubtotal");
+                addPromoOption(code, doc.getString("name"), percent == null ? 0 : percent.doubleValue(), amount == null ? 0 : amount.doubleValue(), minimum == null ? 0 : minimum.doubleValue(), promoCodes, promoRows);
+            }
+            promoAdapter.notifyDataSetChanged(); updateTotal();
+        };
         ListView promoList = new ListView(requireContext());
         promoList.setAdapter(promoAdapter);
         promoList.setDivider(new android.graphics.drawable.ColorDrawable(Color.parseColor("#E7DFD6")));
@@ -150,28 +176,14 @@ public class CartFragment extends Fragment {
 
             db.collection("promotions").get().addOnSuccessListener(sn -> {
                 if (!isAdded()) return;
-                promoCodes.clear();
-                promoRows.clear();
-                long now = System.currentTimeMillis();
-                for (DocumentSnapshot doc : sn.getDocuments()) {
-                    String code = doc.getString("code");
-                    if (code == null || code.trim().isEmpty() || Boolean.FALSE.equals(doc.getBoolean("active"))) continue;
-                    if (isPromotionOutsideDates(doc, now)) continue;
-                    String name = doc.getString("name");
-                    Number percentValue = (Number) doc.get("percent");
-                    Number minimumValue = (Number) doc.get("minSubtotal");
-                    String normalizedCode = code.trim().toUpperCase(Locale.ROOT);
-                    double percent = percentValue == null ? 0 : percentValue.doubleValue();
-                    double minimum = minimumValue == null ? 0 : minimumValue.doubleValue();
-                    promotionOffers.put(normalizedCode, new PromotionOffer(percent, minimum));
-                    promoCodes.add(normalizedCode);
-                    promoRows.add(normalizedCode
-                            + (name == null || name.trim().isEmpty() ? "" : " · " + name)
-                            + (percentValue == null ? "" : " · giảm " + String.format(Locale.getDefault(), "%.0f%%", percent)));
-                }
-                promoAdapter.notifyDataSetChanged();
-                updateTotal();
+                promotionDocuments.clear(); promotionDocuments.addAll(sn.getDocuments()); rebuildPromoOptions.run();
             }).addOnFailureListener(error -> Log.w("CartFragment", "Could not load promotion codes", error));
+
+            db.collection("users").document(uid).collection("vouchers").whereEqualTo("status", "available").get()
+                    .addOnSuccessListener(snapshot -> {
+                        if (!isAdded()) return;
+                        rewardDocuments.clear(); rewardDocuments.addAll(snapshot.getDocuments()); rebuildPromoOptions.run();
+                    }).addOnFailureListener(error -> Log.w("CartFragment", "Could not load redeemed vouchers", error));
         }
         v.findViewById(R.id.btnPick).setOnClickListener(x -> {
             if (savedAddresses.isEmpty()) { toast("Chưa có địa chỉ đã lưu"); return; }
@@ -184,9 +196,7 @@ public class CartFragment extends Fragment {
         return v;
     }
     private void refresh() {
-        List<String> rows = new ArrayList<>();
-        for (Item i : Cart.items) rows.add(i.name + "  ×" + i.qty + "  –  " + String.format(Vi.VN, "%,.0f", i.price * i.qty) + " đ");
-        adapter.setItems(rows);
+        adapter.setItems(new ArrayList<>(Cart.items));
         updateTotal();
     }
     private void updateTotal() {
@@ -195,15 +205,17 @@ public class CartFragment extends Fragment {
         String code = promoInput == null ? "" : promoInput.getText().toString().trim().toUpperCase(Locale.ROOT);
         PromotionOffer offer = promotionOffers.get(code);
         double amountAfterVoucher = subtotal;
-        if (offer != null && subtotal >= offer.minimum && offer.percent >= 0 && offer.percent <= 100) {
-            amountAfterVoucher = subtotal - Math.round(subtotal * offer.percent / 100.0);
+        if (offer != null && subtotal >= offer.minimum) {
+            amountAfterVoucher = offer.fixedAmount > 0 ? Math.max(0, subtotal - offer.fixedAmount)
+                    : subtotal - Math.round(subtotal * offer.percent / 100.0);
         }
-        total.setText(String.format(Locale.US, "Tạm tính sau voucher: %,.0f đ", amountAfterVoucher));
+        total.setText(String.format(Locale.US, "Tổng tiền: %,.0f đ", amountAfterVoucher));
     }
     private static class PromotionOffer {
         final double percent;
+        final double fixedAmount;
         final double minimum;
-        PromotionOffer(double percent, double minimum) { this.percent = percent; this.minimum = minimum; }
+        PromotionOffer(double percent, double fixedAmount, double minimum) { this.percent = percent; this.fixedAmount = fixedAmount; this.minimum = minimum; }
     }
     private void setPromoArrowExpanded(View arrow, boolean expanded) {
         float rotation = expanded ? 90f : 0f;
@@ -216,6 +228,20 @@ public class CartFragment extends Fragment {
         Long startsAt = promotionDateMillis(promotion.get("startsAt"));
         Long endsAt = promotionDateMillis(promotion.get("endsAt"));
         return (startsAt != null && startsAt > now) || (endsAt != null && endsAt < now);
+    }
+    private boolean voucherExpired(DocumentSnapshot voucher, long now) {
+        Long expiry = promotionDateMillis(voucher.get("expiresAt"));
+        return expiry != null && expiry < now;
+    }
+    private void addPromoOption(String code, String name, double percent, double fixedAmount, double minimum,
+                                List<String> codes, List<String> rows) {
+        String normalized = code.trim().toUpperCase(Locale.ROOT);
+        if (codes.contains(normalized)) return;
+        promotionOffers.put(normalized, new PromotionOffer(percent, fixedAmount, minimum));
+        codes.add(normalized);
+        rows.add(normalized + (name == null || name.trim().isEmpty() ? "" : " · " + name)
+                + " · giảm " + (fixedAmount > 0 ? String.format(Locale.getDefault(), "%,.0f ₫", fixedAmount)
+                : String.format(Locale.getDefault(), "%.0f%%", percent)));
     }
     private Long promotionDateMillis(Object value) {
         if (value instanceof Timestamp) return ((Timestamp) value).toDate().getTime();

@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent">
 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="24dp">
-    <ImageView android:id="@+id/ivAvatar" android:layout_width="96dp" android:layout_height="96dp" android:layout_gravity="center_horizontal" android:src="@android:drawable/sym_def_app_icon" android:contentDescription="Ảnh đại diện"/>
+    <FrameLayout android:layout_width="96dp" android:layout_height="96dp" android:layout_gravity="center_horizontal" android:contentDescription="Ảnh đại diện">
+        <TextView android:id="@+id/tvAvatarInitials" android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center" android:textColor="#FFFFFF" android:textSize="28sp" android:textStyle="bold" android:background="@drawable/bg_avatar_initials"/>
+        <ImageView android:id="@+id/ivAvatar" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="centerCrop" android:visibility="gone"/>
+    </FrameLayout>
     <Button android:id="@+id/btnPhoto" style="@style/Widget.Material3.Button.TonalButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_gravity="center_horizontal" android:text="Đổi ảnh đại diện"/>
     <TextView android:id="@+id/tvEmail" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="16sp" android:layout_marginBottom="12dp"/>
     <EditText android:id="@+id/etName" android:background="@drawable/bg_field" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Họ và tên" android:inputType="textPersonName"/>

@@ -60,6 +60,13 @@ async function readTransaction(transaction: string, paths: string[]): Promise<Ma
 async function beginTransaction(): Promise<string> { const response = await fs(":beginTransaction", { method: "POST", body: JSON.stringify({ options: { readWrite: {} } }) }); if (!response.ok) throw new Error(`Could not start Firestore transaction (${response.status}).`); return (await response.json()).transaction; }
 async function commit(transaction: string, writes: JsonRecord[]): Promise<void> { const response = await fs(":commit", { method: "POST", body: JSON.stringify({ transaction, writes }) }); if (!response.ok) throw new Error(`Firestore transaction commit failed (${response.status}).`); }
 function updateWrite(path: string, document: JsonRecord, values: JsonRecord, fieldPaths: string[]): JsonRecord { return { update: { name: path, fields: encodedFields(values) }, updateMask: { fieldPaths }, currentDocument: { updateTime: document.updateTime } }; }
+function pointsWrite(path: string, document: JsonRecord | null, balance: number): JsonRecord {
+  return {
+    update: { name: path, fields: encodedFields({ loyaltyPoints: balance }) },
+    updateMask: { fieldPaths: ["loyaltyPoints"] },
+    currentDocument: document ? { updateTime: document.updateTime } : { exists: false },
+  };
+}
 async function notifyBestEffort(uid: string, subject: string, body: string): Promise<void> {
   try {
     const notificationId = await createInAppNotification({ recipientUid: uid, type: "status_update", from: "Chi Phèo BarberShop", subject, body, read: false });
@@ -72,19 +79,33 @@ async function updateOrder(body: JsonRecord): Promise<void> {
   const { orderId, status, paymentStatus } = body; if (typeof orderId !== "string" || !orderId || orderId.includes("/")) throw new HttpError("Đơn hàng không hợp lệ.", 400);
   if (status !== undefined && !["shipping", "delivered", "completed", "canceled"].includes(status)) throw new HttpError("Trạng thái đơn hàng không hợp lệ.", 400); if (paymentStatus !== undefined && paymentStatus !== "paid") throw new HttpError("Trạng thái thanh toán không hợp lệ.", 400); if (status === "canceled" && paymentStatus === "paid") throw new HttpError("Không thể vừa hủy đơn vừa xác nhận thanh toán.", 400);
   const path = resource(`orders/${orderId}`), transaction = await beginTransaction(), docs = await readTransaction(transaction, [path]), order = docs.get(path); if (!order) throw new HttpError("Không tìm thấy đơn hàng.", 404);
-  const current = field(order, "status"), allowed: Record<string, string[]> = { pending: ["shipping", "completed", "canceled"], shipping: ["delivered"], delivered: [], completed: [], canceled: [] }; if (status && !allowed[current]?.includes(status)) throw new HttpError("Không thể chuyển đơn sang trạng thái này.", 409);
+  const current = field(order, "status"), allowed: Record<string, string[]> = { pending: ["shipping", "completed", "canceled"], shipping: ["delivered"], delivered: ["completed"], completed: [], canceled: [] }; if (status && !allowed[current]?.includes(status)) throw new HttpError("Không thể chuyển đơn sang trạng thái này.", 409);
   const currentPayment = field(order, "paymentStatus") || "unpaid"; if (status === "completed" && currentPayment !== "paid" && paymentStatus !== "paid") throw new HttpError("Chỉ hoàn thành đơn sau khi đã nhận thanh toán.", 409); if ((status === "shipping" || status === "delivered") && currentPayment !== "paid" && paymentStatus !== "paid") throw new HttpError("Chỉ giao đơn hàng sau khi đã xác nhận thanh toán.", 409); if (status === "canceled" && currentPayment === "paid") throw new HttpError("Đơn đã thanh toán không thể hủy tự động; hãy xử lý hoàn tiền trước.", 409);
   if (paymentStatus === "paid" && currentPayment !== "paid" && !["pending", "shipping"].includes(current)) throw new HttpError("Không thể xác nhận thanh toán cho đơn đã hủy hoặc đã kết thúc.", 409);
   const items = field(order, "items") || [], refundStock = status === "canceled" && current === "pending"; if (refundStock && (!Array.isArray(items) || items.some((item: JsonRecord) => typeof item.productId !== "string" || !item.productId || item.productId.includes("/")))) throw new HttpError("Không thể hoàn kho vì đơn hàng có dữ liệu sản phẩm không hợp lệ.", 409);
   const quantities = new Map<string, number>(); if (refundStock) for (const item of items) { const qty = Number(item.quantity ?? item.qty); if (!Number.isInteger(qty) || qty <= 0) throw new HttpError("Không thể hoàn kho vì số lượng sản phẩm không hợp lệ.", 409); quantities.set(item.productId, (quantities.get(item.productId) || 0) + qty); }
   const productPaths = [...quantities.keys()].map(id => resource(`products/${id}`)), all = await readTransaction(transaction, productPaths); if (productPaths.some(p => !all.get(p))) throw new HttpError("Không thể hoàn kho vì một sản phẩm trong đơn đã bị xóa.", 409);
   for (const productPath of productPaths) { const stock = Number(field(all.get(productPath)!, "stock")); if (!Number.isInteger(stock) || stock < 0 || stock + (quantities.get(productPath.slice(productPath.lastIndexOf("/") + 1)) || 0) > Number.MAX_SAFE_INTEGER) throw new HttpError("Không thể hoàn kho vì tồn kho có dữ liệu không hợp lệ.", 409); }
-  const updates: JsonRecord = { updatedAt: new Date() }, mask = ["updatedAt"]; if (status) { updates.status = status; mask.push("status"); } if (status === "completed" || status === "delivered") { updates.completedAt = new Date(); mask.push("completedAt"); } if (paymentStatus) { updates.paymentStatus = "paid"; mask.push("paymentStatus"); }
-  const writes: JsonRecord[] = [updateWrite(path, order, updates, mask)]; for (const productPath of productPaths) { const product = all.get(productPath)!, id = productPath.slice(productPath.lastIndexOf("/") + 1); writes.push(updateWrite(productPath, product, { stock: Number(field(product, "stock")) + (quantities.get(id) || 0) }, ["stock"])); } await commit(transaction, writes);
-  const uid = field(order, "userId");
+  const uid = field(order, "userId"), finalizing = status === "completed" || status === "delivered";
+  const shouldAward = finalizing && field(order, "pointsAwarded") !== true && typeof uid === "string" && uid.length > 0;
+  const userPath = shouldAward ? resource(`users/${uid}`) : "";
+  const loyaltyDocs = shouldAward ? await readTransaction(transaction, [userPath]) : new Map<string, JsonRecord | null>();
+  const user = shouldAward ? loyaltyDocs.get(userPath) || null : null;
+  const invoiceTotal = Number(field(order, "total") || 0);
+  const pointsEarned = shouldAward && Number.isSafeInteger(invoiceTotal) && invoiceTotal >= 0 ? Math.floor(invoiceTotal / 10000) : 0;
+  const updates: JsonRecord = { updatedAt: new Date() }, mask = ["updatedAt"]; if (status) { updates.status = status; mask.push("status"); } if (status === "completed" || status === "delivered") { updates.completedAt = new Date(); mask.push("completedAt"); } if (paymentStatus) { updates.paymentStatus = "paid"; updates.paidAt = new Date(); mask.push("paymentStatus", "paidAt"); }
+  if (shouldAward) { updates.pointsAwarded = true; updates.pointsEarned = pointsEarned; mask.push("pointsAwarded", "pointsEarned"); }
+  const writes: JsonRecord[] = [updateWrite(path, order, updates, mask)];
+  for (const productPath of productPaths) { const product = all.get(productPath)!, id = productPath.slice(productPath.lastIndexOf("/") + 1); writes.push(updateWrite(productPath, product, { stock: Number(field(product, "stock")) + (quantities.get(id) || 0) }, ["stock"])); }
+  if (shouldAward && pointsEarned > 0) {
+    const oldBalance = Number(field(user, "loyaltyPoints") || 0);
+    if (!Number.isSafeInteger(oldBalance) || oldBalance < 0 || oldBalance + pointsEarned > Number.MAX_SAFE_INTEGER) throw new HttpError("Không thể cập nhật điểm thưởng của khách hàng.", 409);
+    writes.push(pointsWrite(userPath, user, oldBalance + pointsEarned));
+  }
+  await commit(transaction, writes);
   if (typeof uid === "string" && uid && (status || paymentStatus)) {
     const labels: Record<string, string> = { pending: "Chờ xử lý", shipping: "Đang giao", delivered: "Đã giao", completed: "Hoàn thành", canceled: "Đã hủy" };
-    const messages = [status ? `Trạng thái mới: ${labels[status] || status}.` : "", paymentStatus === "paid" ? "Đã xác nhận thanh toán." : ""].filter(Boolean);
+    const messages = [status ? `Trạng thái mới: ${labels[status] || status}.` : "", paymentStatus === "paid" ? "Đã xác nhận thanh toán." : "", shouldAward && pointsEarned > 0 ? `Bạn được cộng ${pointsEarned} điểm từ hóa đơn.` : ""].filter(Boolean);
     await notifyBestEffort(uid, "Đơn hàng của bạn", messages.join(" "));
   }
 }
@@ -93,12 +114,26 @@ async function updateAppointment(body: JsonRecord): Promise<void> {
   const path = resource(`appointments/${appointmentId}`), transaction = await beginTransaction(), docs = await readTransaction(transaction, [path]), appointment = docs.get(path); if (!appointment) throw new HttpError("Không tìm thấy lịch hẹn.", 404);
   const current = field(appointment, "status"), allowed: Record<string, string[]> = { pending: ["confirmed", "canceled"], confirmed: ["in_service", "canceled"], in_service: ["completed", "canceled"], completed: [], canceled: [] }; if (!allowed[current]?.includes(status)) throw new HttpError("Không thể chuyển lịch hẹn sang trạng thái này.", 409);
   const ids = field(appointment, "slotIds") || [field(appointment, "slotId")].filter(Boolean); if (!Array.isArray(ids) || ids.some(id => typeof id !== "string" || id.includes("/"))) throw new HttpError("Dữ liệu khung giờ không hợp lệ.", 409);
-  const slotPaths = status === "canceled" ? ids.map(id => resource(`slots/${id}`)) : [], slots = await readTransaction(transaction, slotPaths), values: JsonRecord = { status, updatedAt: new Date() }, mask = ["status", "updatedAt"];
+  const uid = field(appointment, "userId"), shouldAward = status === "completed" && field(appointment, "pointsAwarded") !== true && typeof uid === "string" && uid.length > 0;
+  const userPath = shouldAward ? resource(`users/${uid}`) : "";
+  const slotPaths = status === "canceled" ? ids.map(id => resource(`slots/${id}`)) : [];
+  const reads = await readTransaction(transaction, [...slotPaths, ...(shouldAward ? [userPath] : [])]);
+  const slots = reads, user = shouldAward ? reads.get(userPath) || null : null;
+  const invoiceTotal = Number(field(appointment, "total") || 0);
+  const pointsEarned = shouldAward && Number.isSafeInteger(invoiceTotal) && invoiceTotal >= 0 ? Math.floor(invoiceTotal / 10000) : 0;
+  const values: JsonRecord = { status, updatedAt: new Date() }, mask = ["status", "updatedAt"];
   if (status === "completed" || status === "canceled") { values.closedAt = new Date(); mask.push("closedAt"); }
-  const writes: JsonRecord[] = [updateWrite(path, appointment, values, mask)]; if (status === "canceled") for (const slotPath of slotPaths) { const slot = slots.get(slotPath); if (slot && field(slot, "appointmentId") === appointmentId) writes.push({ delete: slotPath, currentDocument: { updateTime: slot.updateTime } }); } await commit(transaction, writes);
-  const uid = field(appointment, "userId");
+  if (shouldAward) { values.pointsAwarded = true; values.pointsEarned = pointsEarned; mask.push("pointsAwarded", "pointsEarned"); }
+  const writes: JsonRecord[] = [updateWrite(path, appointment, values, mask)];
+  if (status === "canceled") for (const slotPath of slotPaths) { const slot = slots.get(slotPath); if (slot && field(slot, "appointmentId") === appointmentId) writes.push({ delete: slotPath, currentDocument: { updateTime: slot.updateTime } }); }
+  if (shouldAward && pointsEarned > 0) {
+    const oldBalance = Number(field(user, "loyaltyPoints") || 0);
+    if (!Number.isSafeInteger(oldBalance) || oldBalance < 0 || oldBalance + pointsEarned > Number.MAX_SAFE_INTEGER) throw new HttpError("Không thể cập nhật điểm thưởng của khách hàng.", 409);
+    writes.push(pointsWrite(userPath, user, oldBalance + pointsEarned));
+  }
+  await commit(transaction, writes);
   const labels: Record<string, string> = { confirmed: "Đã xác nhận lịch", in_service: "Đang cắt tóc", completed: "Hoàn thành", canceled: "Đã hủy" };
-  if (typeof uid === "string" && uid) await notifyBestEffort(uid, "Lịch hẹn của bạn", `Trạng thái mới: ${labels[status] || status}.`);
+  if (typeof uid === "string" && uid) await notifyBestEffort(uid, "Lịch hẹn của bạn", `Trạng thái mới: ${labels[status] || status}.${shouldAward && pointsEarned > 0 ? ` Bạn được cộng ${pointsEarned} điểm từ hóa đơn.` : ""}`);
 }
 async function updateContact(body: JsonRecord): Promise<void> {
   const { contactId, status } = body;

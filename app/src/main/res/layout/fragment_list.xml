@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:padding="16dp">
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:padding="16dp">
     <EditText android:id="@+id/etSearch" android:background="@drawable/bg_field" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Tìm kiếm..." android:inputType="text"/>
+    <com.google.android.material.button.MaterialButton android:id="@+id/btnFavorites" style="@style/Widget.Material3.Button.OutlinedButton" android:layout_width="wrap_content" android:layout_height="40dp" android:layout_gravity="end" android:layout_marginTop="4dp" android:text="Yêu thích" android:textAllCaps="false" android:visibility="gone" app:icon="@drawable/ic_favorite" app:iconPadding="6dp" app:iconTint="#8D3C32" />
     <LinearLayout android:id="@+id/filterBar" android:visibility="gone" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
         <Spinner android:id="@+id/spCat" android:background="@drawable/bg_field" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:layout_marginEnd="8dp"/>
         <Spinner android:id="@+id/spSort" android:background="@drawable/bg_field" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"/>

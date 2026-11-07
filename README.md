@@ -1,18 +1,30 @@
-# Chí Phèo BarberShop (Java + XML, Material, Firebase)
-1. Create a Firebase project, add Android app `com.example.salonapp`, put `google-services.json` in `app/`.
-2. Enable Auth (Email/Password) and Firestore; paste `firestore.rules`.
-3. Add sample docs: `services` {name, description, durationMinutes, price} and `products` {name, description, price, category, stock}.
-4. Open in Android Studio, sync, and run. The project includes the Gradle 9.3.1 wrapper (`./gradlew` on macOS/Linux or `gradlew.bat` on Windows).
-Extra sample docs: `branches` {name, description(=address)}, `promotions` {name, description, code, percent}.
-Checkout, appointment changes, and staff queue/status actions use Supabase Edge Functions; configure and deploy them using `supabase/README.md`. The app has no Firebase Cloud Functions and no SMS sign-in path. It can run on Firebase Spark and Supabase Free within their quotas; free tiers can pause or restrict service when limits are reached.
-Google login: enable Google provider in Firebase Auth, add your debug SHA-1, re-download google-services.json.
-Cloudinary: verify CLOUD_NAME / UPLOAD_PRESET in Config.java against your Cloudinary account; create an UNSIGNED preset (images only, size limit, fixed folder). Never put the API secret in the app.
-Appointments: stored in `appointments`; transactions reserve all hourly blocks occupied by the selected service duration. Users can cancel/reschedule pending or confirmed appointments with at least 2h notice. Staff can update appointment status in Profile > Quản lý cửa hàng after receiving the `staff` custom claim.
-Booking data: `services` include `durationMinutes`; `stylists` have {name, description, branchId(=branches doc id)}; branches may have `phone`. Start times are hourly from 09:00, with service end times limited to 19:00 Vietnam time.
-Notifications: local reminder 1h before booking (WorkManager); push via FCM (token saved to users/{uid}.fcmToken, topic "promotions" - send promos from Firebase console). Replies and order/appointment status changes create an in-app notification and attempt FCM delivery through Supabase.
-Products: fields name, description, price, category, stock. Shop has category filter, sort, search; long-press a product to see its reviews. The Supabase `create-order` Edge Function rechecks prices, promotions and stock and creates orders atomically. Staff can move pending orders to shipping or cancel them (restoring stock), mark shipping orders delivered, and use the manual payment fallback in Profile > Quản lý cửa hàng. Delivered orders can be rated per product from Profile > My orders.
-Authentication: use Firebase Email/Password or Google sign-in. SMS phone sign-in was removed because Firebase requires the pay-as-you-go Blaze plan and charges for verification SMS. Keep the Firebase project on Spark for no-cost operation within its quotas.
-Payments: cash or bank transfer (SePay VietQR image, set Config.BANK_*). For this BIDV personal account, the QR targets the SePay-linked VA. Orders start with paymentStatus "unpaid". Supabase `create-order` validates Firebase sign-in and reserves inventory; `sepay-webhook` verifies the main account, VA, order code, and exact amount before marking matching bank orders paid. A matching transfer that arrives after the reservation deadline is recorded as paid but flagged for shop reconciliation; the order is not automatically fulfilled. Configure both endpoints and the SePay HMAC webhook as described in `supabase/README.md`. The staff payment action remains available as a manual fallback.
-Dữ liệu mẫu tiếng Việt: chạy seed/seed.js (xem HOW_TO_RUN.md mục 4). Keep `seed/serviceAccountKey.json` private and do not commit it. App UI is in Vietnamese.
+# Chí Phèo BarberShop
 
-Web admin dashboard: see `admin/README.md` for Firebase Web app setup, admin claim bootstrapping, and deployment. The browser interface uses Firebase Authentication and Firestore Security Rules; trusted status changes use Supabase Edge Functions.
+Vietnamese barber shop customer app and admin dashboard. The repository contains an Android app, a Firebase Hosting admin site, Supabase Edge Functions, and a local MLX hair-consultation server.
+
+## Components
+
+- **Android app** (`app/`): Java, XML, Material Components, AndroidX, Firebase Authentication, Cloud Firestore, Firebase Cloud Messaging, and WorkManager. The app supports email/password and Google sign-in, appointment booking and management, product browsing and checkout, saved addresses, favorites, notifications, promotions, points and vouchers, product/service reviews, and a Vietnamese hair-advisor chat. In debug builds, face scanning uses the MediaPipe Face Landmarker on-device and sends only geometric ratios to the local consultation server; it does not upload face images.
+- **Admin dashboard** (`admin/`): responsive Vietnamese web app hosted on Firebase Hosting. Firebase Authentication and Firestore Security Rules protect catalog, branches, stylists, promotions, reward vouchers, shop events, customers, reviews, orders, appointments, and contact requests. Firebase Auth user roles and account status are managed server-side through `manage-staff`.
+- **Supabase Edge Functions** (`supabase/functions/`): trusted operations for appointments, order creation and inventory, staff status changes, bank-transfer verification, unpaid-order expiry, loyalty redemption, event notifications, contact replies, hair-advisor responses, and staff account management. Functions verify Firebase ID tokens or the SePay HMAC signature as appropriate. Firebase service-account credentials belong in Supabase Secrets only.
+- **Local AI service** (`ai-training/`): FastAPI server using MLX-LM and the bundled fused Qwen model. It provides `/api/chat`, `/api/consult-face`, and `/health`. The Android debug build calls this local service; release builds use the Supabase hair-advisor function. The development server is unauthenticated and must stay on a trusted network.
+- **Data and project configuration**: Firestore rules and indexes are in the repository root. `seed/seed.js` inserts sample Vietnamese services, branches, stylists, products, and promotions. `scripts/set-staff-claim.js` is a trusted-machine bootstrap tool for initial Firebase custom claims.
+
+## Main workflows
+
+- Booking validates the service, branch, stylist, opening hours, and available hourly slots through Supabase. Customers can cancel or reschedule eligible appointments with the configured notice period.
+- Checkout validates current prices, promotions, vouchers, and stock server-side. Orders support cash and SePay bank transfers. The SePay webhook checks its HMAC, destination, order code, and exact amount before confirming payment.
+- Customers earn one loyalty point per 10,000 VND on eligible completed invoices. Reward vouchers and promotion codes are single-use per account; voucher redemption and order creation update balances and usage records atomically.
+- Reviews are grouped in one app section. Service reviews require a completed appointment; product reviews require a completed, paid order and are tracked per purchased product.
+- Admin-created shop events appear in the app inbox and are sent as push notifications when a user has a device token.
+
+## Build and run
+
+- Open the repository in Android Studio with JDK 17 and Android SDK 34 installed. Add the Firebase `google-services.json` file to `app/`, sync Gradle, and run the `app` debug variant. Build from the repository root with `./gradlew assembleDebug` (Windows: `gradlew.bat assembleDebug`).
+- Configure and deploy Firebase Hosting, Firestore rules/indexes, and Supabase Edge Functions in their respective consoles/CLIs. The Android and admin files contain public client configuration only; never put Firebase service-account JSON, private keys, Supabase secret/service-role keys, or SePay secrets in the app or website.
+- To run local AI on an Apple Silicon Mac, create `ai-training/.venv`, install `ai-training/requirements.txt`, and start `./ai-training/run_server.sh`. Set the Mac LAN address in `app/src/main/java/com/example/salonapp/Config.java` for a physical phone. Debug cleartext HTTP is enabled only in `app/src/debug/AndroidManifest.xml`; release builds should use HTTPS services. The face-scan action is hidden in release builds because its consultation endpoint is local-only.
+- `seed/serviceAccountKey.json` and `ai-training/serviceAccountKey.json`, if present locally, are ignored credential files. Keep them private and rotate them if they have ever been shared.
+
+## External model attribution
+
+The bundled fused model is based on **Qwen2.5-1.5B-Instruct**, distributed under Apache-2.0. The bundled LoRA adapter is project-specific. Review the upstream model license and applicable model terms before redistributing model weights.

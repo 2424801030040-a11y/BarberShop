@@ -14,12 +14,14 @@ public class ItemAdapter extends RecyclerView.Adapter<ItemAdapter.VH> {
     private final List<Item> all = new ArrayList<>(), shown = new ArrayList<>();
     private Consumer<Item> onClick, onLong;
     private Consumer<Item> onAddToCart;
+    private Consumer<Item> onFavoriteChanged;
     private String favoriteCollection = "products";
     private boolean commerceMode, productMode;
     private String query = "", category = null; private int sort = 0;
     public void setOnClick(Consumer<Item> c) { onClick = c; }
     public void setOnLong(Consumer<Item> c) { onLong = c; }
     public void setOnAddToCart(Consumer<Item> c) { onAddToCart = c; }
+    public void setOnFavoriteChanged(Consumer<Item> c) { onFavoriteChanged = c; }
     public void setCommerceMode(boolean commerce, boolean products, String collection) {
         commerceMode = commerce; productMode = products; favoriteCollection = collection;
         notifyDataSetChanged();
@@ -67,6 +69,7 @@ public class ItemAdapter extends RecyclerView.Adapter<ItemAdapter.VH> {
             h.favorite.setImageResource(saved ? R.drawable.ic_favorite : R.drawable.ic_favorite_border);
             h.favorite.setContentDescription(saved ? "Bỏ yêu thích" : "Thêm vào yêu thích");
             android.widget.Toast.makeText(v.getContext(), saved ? "Đã thêm vào yêu thích" : "Đã bỏ yêu thích", android.widget.Toast.LENGTH_SHORT).show();
+            if (onFavoriteChanged != null) onFavoriteChanged.accept(i);
         });
         h.addToCart.setEnabled(!out);
         h.addToCart.setAlpha(out ? 0.55f : 1f);

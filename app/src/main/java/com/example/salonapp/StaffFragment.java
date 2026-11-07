@@ -136,6 +136,7 @@ public class StaffFragment extends Fragment {
         if ("pending".equals(status) && !"paid".equals(String.valueOf(row.get("paymentStatus")))) { labels.add("Hủy đơn và hoàn tồn kho"); nextStatus.add("canceled"); markPaid.add(false); }
         if ("pending".equals(status) && "paid".equals(String.valueOf(row.get("paymentStatus")))) { labels.add("Xác nhận gửi hàng"); nextStatus.add("shipping"); markPaid.add(false); }
         if ("shipping".equals(status)) { labels.add("Đánh dấu đã giao"); nextStatus.add("delivered"); markPaid.add(false); }
+        if ("delivered".equals(status)) { labels.add("Xác nhận hoàn tất đơn"); nextStatus.add("completed"); markPaid.add(false); }
         if ("unpaid".equals(String.valueOf(row.get("paymentStatus"))) && ("pending".equals(status) || "shipping".equals(status))) { labels.add("Xác nhận đã thanh toán"); nextStatus.add(null); markPaid.add(true); }
         if (labels.isEmpty()) { toast("Đơn hàng này đã hoàn tất."); return; }
         new MaterialAlertDialogBuilder(requireContext()).setTitle(String.valueOf(row.get("orderCode")))

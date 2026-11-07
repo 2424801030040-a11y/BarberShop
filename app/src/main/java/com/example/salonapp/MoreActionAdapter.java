@@ -13,15 +13,17 @@ import java.util.function.IntConsumer;
 public class MoreActionAdapter extends RecyclerView.Adapter<MoreActionAdapter.Holder> {
     private static final int[] ICONS = {
             R.drawable.ic_action_branch, R.drawable.ic_action_promo, R.drawable.ic_action_faq,
-            R.drawable.ic_action_call, R.drawable.ic_action_contact, R.drawable.ic_action_rating
+            R.drawable.ic_action_call, R.drawable.ic_action_contact, R.drawable.ic_action_rating,
+            R.drawable.ic_action_assistant
     };
     private static final String[] TITLES = {
             "Chi nhánh & bản đồ", "Khuyến mãi", "Câu hỏi thường gặp",
-            "Gọi cho cửa hàng", "Gửi yêu cầu liên hệ", "Đánh giá dịch vụ"
+            "Gọi cho cửa hàng", "Gửi yêu cầu liên hệ", "Đánh giá", "Tư vấn tóc cùng AI"
     };
     private static final String[] SUBTITLES = {
             "Tìm cửa hàng gần bạn", "Ưu đãi đang áp dụng", "Chính sách & hỗ trợ",
-            "Liên hệ trực tiếp", "Chúng tôi luôn lắng nghe", "Chia sẻ trải nghiệm sau lịch hẹn"
+            "Liên hệ trực tiếp", "Chúng tôi luôn lắng nghe", "Dịch vụ đã dùng & sản phẩm đã mua",
+            "Kiểu tóc, màu tóc & chăm sóc phù hợp với bạn"
     };
     private IntConsumer onClick;
 

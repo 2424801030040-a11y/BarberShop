@@ -12,8 +12,8 @@
     <TextView android:id="@+id/tvTotal" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="18sp" android:textStyle="bold" android:padding="8dp"/>
     <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Phương thức thanh toán" android:textStyle="bold" android:layout_marginTop="10dp"/>
     <RadioGroup android:id="@+id/rgPay" android:layout_width="match_parent" android:layout_height="wrap_content">
-        <RadioButton android:id="@+id/rbCash" android:checked="true" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Tiền mặt (khi nhận hàng / tại cửa hàng)"/>
-        <RadioButton android:id="@+id/rbBank" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Chuyển khoản (mã QR)"/>
+        <RadioButton android:id="@+id/rbCash" android:checked="true" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Tiền mặt"/>
+        <RadioButton android:id="@+id/rbBank" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Chuyển khoản"/>
     </RadioGroup>
     <Button android:id="@+id/btnOrder" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Đặt hàng"/>
 </LinearLayout>

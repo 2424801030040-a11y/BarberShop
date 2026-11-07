@@ -11,7 +11,7 @@ import com.google.firebase.Timestamp;
 import com.google.firebase.firestore.*;
 import java.text.SimpleDateFormat;
 import java.util.*;
-/** Order history + status tracking; delivered orders can be rated per product. */
+/** Order history + status tracking; completed and paid orders can be rated per product. */
 public class OrdersFragment extends Fragment {
     private List<DocumentSnapshot> docs = new ArrayList<>();
     private ListenerRegistration ordersListener;
@@ -73,7 +73,7 @@ public class OrdersFragment extends Fragment {
             sb.append("• ").append(names[i]).append(" ×").append(quantity == null ? "?" : quantity).append("\n");
         }
         MaterialAlertDialogBuilder b = new MaterialAlertDialogBuilder(requireContext()).setTitle("Chi tiết đơn hàng").setMessage(sb).setNegativeButton("Đóng", null);
-        if ("delivered".equals(d.getString("status")))
+        if ("completed".equals(d.getString("status")) && "paid".equals(d.getString("paymentStatus")))
             b.setPositiveButton("Đánh giá sản phẩm", (dl, w) -> new MaterialAlertDialogBuilder(requireContext()).setTitle("Sản phẩm nào?").setItems(names, (d2, k) -> {
                 String pid = String.valueOf(items.get(k).get("productId"));
                 Map<String, Object> base = new HashMap<>(); base.put("targetType", "product"); base.put("targetId", pid); base.put("targetName", names[k]); base.put("orderId", d.getId());

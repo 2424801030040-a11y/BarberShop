@@ -14,6 +14,11 @@ public final class FavoriteStore {
                 .getStringSet(collection, java.util.Collections.emptySet()).contains(itemId);
     }
 
+    public static Set<String> getSavedIds(Context context, String collection) {
+        return new HashSet<>(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getStringSet(collection, java.util.Collections.emptySet()));
+    }
+
     public static boolean toggle(Context context, String collection, String itemId) {
         android.content.SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         Set<String> saved = new HashSet<>(prefs.getStringSet(collection, java.util.Collections.emptySet()));

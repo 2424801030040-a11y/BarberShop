@@ -6,6 +6,7 @@ import android.widget.*;
 import androidx.core.content.ContextCompat;
 import androidx.credentials.*;
 import androidx.credentials.exceptions.GetCredentialException;
+import androidx.credentials.exceptions.NoCredentialException;
 import com.google.android.libraries.identity.googleid.*;
 import com.google.firebase.auth.GoogleAuthProvider;
 import androidx.appcompat.app.AppCompatActivity;
@@ -33,9 +34,21 @@ public class LoginActivity extends AppCompatActivity {
         });
     }
     private void googleSignIn() {
-        GetGoogleIdOption opt = new GetGoogleIdOption.Builder().setFilterByAuthorizedAccounts(false)
-            .setServerClientId(getString(R.string.default_web_client_id)).build();
-        GetCredentialRequest req = new GetCredentialRequest.Builder().addCredentialOption(opt).build();
+        requestGoogleCredential(false);
+    }
+
+    /** First try the account picker, then use Google's explicit button flow if it has no entry. */
+    private void requestGoogleCredential(boolean explicitButtonFlow) {
+        CredentialOption option;
+        if (explicitButtonFlow) {
+            option = new GetSignInWithGoogleOption.Builder(getString(R.string.default_web_client_id)).build();
+        } else {
+            option = new GetGoogleIdOption.Builder()
+                .setFilterByAuthorizedAccounts(false)
+                .setServerClientId(getString(R.string.default_web_client_id))
+                .build();
+        }
+        GetCredentialRequest req = new GetCredentialRequest.Builder().addCredentialOption(option).build();
         CredentialManager.create(this).getCredentialAsync(this, req, null, ContextCompat.getMainExecutor(this),
             new CredentialManagerCallback<GetCredentialResponse, GetCredentialException>() {
                 @Override public void onResult(GetCredentialResponse r) {
@@ -44,12 +57,35 @@ public class LoginActivity extends AppCompatActivity {
                         if (c instanceof CustomCredential && GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL.equals(c.getType())) {
                             GoogleIdTokenCredential g = GoogleIdTokenCredential.createFrom(((CustomCredential) c).getData());
                             auth.signInWithCredential(GoogleAuthProvider.getCredential(g.getIdToken(), null))
-                                .addOnSuccessListener(x -> goHome()).addOnFailureListener(e -> toast(e.getMessage()));
+                                .addOnSuccessListener(x -> goHome()).addOnFailureListener(e -> toast(describeGoogleError(e)));
+                        } else {
+                            toast("Google did not return a sign-in token. Please try again.");
                         }
                     } catch (Exception e) { toast(e.getMessage()); }
                 }
-                @Override public void onError(GetCredentialException e) { toast("Đăng nhập Google thất bại: " + e.getMessage()); }
+                @Override public void onError(GetCredentialException e) {
+                    if (!explicitButtonFlow && e instanceof NoCredentialException) {
+                        requestGoogleCredential(true);
+                        return;
+                    }
+                    if (e instanceof NoCredentialException) {
+                        toast("No Google account is available on this device. Add one in Android Settings > Passwords & accounts, then try again.");
+                    } else {
+                        toast(describeGoogleError(e));
+                    }
+                }
             });
+    }
+    private String describeGoogleError(Exception error) {
+        String detail = error == null || error.getMessage() == null ? "" : error.getMessage();
+        String normalized = detail.toLowerCase(java.util.Locale.ROOT);
+        if (normalized.contains("[16]") || normalized.contains("reauth")) {
+            return "Google needs you to re-authenticate the account on this emulator. In Android Settings > Passwords & accounts, remove and add the Google account again, then retry. Also check internet access and automatic date/time.";
+        }
+        if (normalized.contains("[10]") || normalized.contains("developer_error")) {
+            return "Google OAuth configuration was rejected. Check that Google sign-in is enabled in Firebase Authentication and that the Android and Web OAuth clients belong to this Firebase project.";
+        }
+        return "Google sign-in failed: " + (detail.isEmpty() ? "Please try again." : detail);
     }
     private String email() { return etEmail.getText().toString().trim(); }
     private String pass() { return etPass.getText().toString(); }

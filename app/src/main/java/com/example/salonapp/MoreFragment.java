@@ -18,7 +18,7 @@ import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.firestore.FirebaseFirestore;
 import java.util.*;
 public class MoreFragment extends Fragment {
-    static final String SHOP_PHONE = "0900000000";
+    static final String SHOP_PHONE = "0972344129";
     static final String FAQ = "Hủy lịch: vui lòng hủy hoặc đổi lịch trước giờ hẹn ít nhất 2 giờ.\n\n"
         + "Trả hàng: sản phẩm chưa mở có thể trả trong 7 ngày kèm hóa đơn.\n\n"
         + "Đổi hàng: sản phẩm lỗi hoặc giao sai được đổi miễn phí trong 7 ngày.\n\n"
@@ -38,11 +38,12 @@ public class MoreFragment extends Fragment {
     }
     private void onActionClick(int position) {
         if (position == 0) open(ListFragment.of("branches"));
-        else if (position == 1) open(ListFragment.of("promotions"));
+        else if (position == 1) open(new PromotionsFragment());
         else if (position == 2) new MaterialAlertDialogBuilder(requireContext()).setTitle("Câu hỏi thường gặp & chính sách").setMessage(FAQ).setPositiveButton("OK", null).show();
         else if (position == 3) startActivity(new Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + SHOP_PHONE)));
         else if (position == 4) contact();
-        else if (position == 5) open(new AppointmentsFragment());
+        else if (position == 5) open(new ReviewsHubFragment());
+        else if (position == 6) open(new HairAdvisorFragment());
     }
     private void contact() {
         Context context = requireContext();

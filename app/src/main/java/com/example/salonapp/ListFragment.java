@@ -20,6 +20,10 @@ public class ListFragment extends Fragment {
         View v = inf.inflate(R.layout.fragment_list, c, false);
         String col = getArguments().getString("c");
         boolean products = col.equals("products");
+        boolean favoritesAvailable = products || col.equals("services");
+        View favoritesButton = v.findViewById(R.id.btnFavorites);
+        favoritesButton.setVisibility(favoritesAvailable ? View.VISIBLE : View.GONE);
+        favoritesButton.setOnClickListener(view -> open(new FavoritesFragment()));
         ItemAdapter adapter = new ItemAdapter();
         RecyclerView rv = v.findViewById(R.id.rv);
         ViewModeToggle.bind(requireContext(), rv, v.findViewById(R.id.viewModeToggle));
@@ -47,10 +51,14 @@ public class ListFragment extends Fragment {
         adapter.setOnClick(i -> {
             if (products) {
                 // Keep the card itself focused on details; cart actions are explicit.
-                open(ReviewsFragment.of(i.id, i.name));
+                open(ReviewsFragment.of(i.id, i.name, "product"));
             } else if (col.equals("services")) open(ReviewsFragment.of(i.id, i.name));
             else if (col.equals("branches")) {
                 try {
+                    if (i.mapUrl != null && i.mapUrl.startsWith("https://")) {
+                        startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(i.mapUrl)));
+                        return;
+                    }
                     String query = Uri.encode((i.name == null ? "" : i.name + " ") + (i.description == null ? "" : i.description));
                     startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/search/?api=1&query=" + query)));
                 }

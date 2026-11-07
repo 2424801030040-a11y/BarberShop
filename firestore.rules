@@ -30,11 +30,14 @@ service cloud.firestore {
           && (!('description' in d) || (d.description is string && d.description.size() <= 2000))
           && d.price is int && d.price >= 0 && d.stock is int && d.stock >= 0 && validCatalogImage(d))
         || (col == 'branches'
-          && d.keys().hasOnly(['name', 'description', 'phone', 'createdAt', 'updatedAt'])
+          && d.keys().hasOnly(['name', 'description', 'phone', 'imageUrl', 'mapUrl', 'createdAt', 'updatedAt'])
           && d.keys().hasAll(['name', 'description'])
           && d.name is string && d.name.size() > 0 && d.name.size() <= 200
           && d.description is string && d.description.size() > 0 && d.description.size() <= 2000
-          && (!('phone' in d) || (d.phone is string && d.phone.size() <= 200)))
+          && (!('phone' in d) || (d.phone is string && d.phone.size() <= 200))
+          && (!('mapUrl' in d) || d.mapUrl == null
+            || (d.mapUrl is string && d.mapUrl.size() <= 2000 && d.mapUrl.matches('https://.*')))
+          && validCatalogImage(d))
         || (col == 'stylists'
           && d.keys().hasOnly(['name', 'description', 'branchId', 'imageUrl', 'createdAt', 'updatedAt'])
           && d.keys().hasAll(['name', 'branchId'])
@@ -42,14 +45,31 @@ service cloud.firestore {
           && d.branchId is string && d.branchId.size() > 0 && d.branchId.size() <= 200
           && (!('description' in d) || (d.description is string && d.description.size() <= 2000)) && validCatalogImage(d))
         || (col == 'promotions'
-          && d.keys().hasOnly(['name', 'description', 'code', 'percent', 'active', 'startsAt', 'endsAt', 'minSubtotal', 'createdAt', 'updatedAt'])
-          && d.keys().hasAll(['name', 'code', 'percent'])
+          && d.keys().hasOnly(['name', 'description', 'code', 'percent', 'discountAmount', 'active', 'startsAt', 'endsAt', 'minSubtotal', 'createdAt', 'updatedAt'])
+          && d.keys().hasAll(['name', 'code'])
           && d.name is string && d.name.size() > 0 && d.name.size() <= 200
           && d.code is string && d.code.size() > 0 && d.code.size() <= 200
-          && d.percent is number && d.percent >= 0 && d.percent <= 100
+          && ((('percent' in d) && !('discountAmount' in d) && d.percent is number && d.percent > 0 && d.percent <= 100)
+            || (('discountAmount' in d) && !('percent' in d) && d.discountAmount is int && d.discountAmount > 0))
           && (!('active' in d) || d.active is bool)
           && (!('minSubtotal' in d) || (d.minSubtotal is int && d.minSubtotal >= 0))
-          && (!('description' in d) || (d.description is string && d.description.size() <= 2000)));
+          && (!('description' in d) || (d.description is string && d.description.size() <= 2000)))
+        || (col == 'rewardVouchers'
+          && d.keys().hasOnly(['name', 'description', 'pointsCost', 'percent', 'discountAmount', 'minSubtotal', 'active', 'startsAt', 'endsAt', 'createdAt', 'updatedAt'])
+          && d.keys().hasAll(['name', 'pointsCost'])
+          && d.name is string && d.name.size() > 0 && d.name.size() <= 200
+          && d.pointsCost is int && d.pointsCost > 0 && d.pointsCost <= 1000000
+          && ((('percent' in d) && !('discountAmount' in d) && d.percent is number && d.percent > 0 && d.percent <= 100)
+            || (('discountAmount' in d) && !('percent' in d) && d.discountAmount is int && d.discountAmount > 0))
+          && (!('minSubtotal' in d) || (d.minSubtotal is int && d.minSubtotal >= 0))
+          && (!('active' in d) || d.active is bool)
+          && (!('description' in d) || (d.description is string && d.description.size() <= 2000)))
+        || (col == 'shopEvents'
+          && d.keys().hasOnly(['title', 'body', 'startsAt', 'endsAt', 'active', 'createdAt', 'updatedAt'])
+          && d.keys().hasAll(['title', 'body', 'startsAt', 'endsAt', 'active'])
+          && d.title is string && d.title.size() > 0 && d.title.size() <= 200
+          && d.body is string && d.body.size() > 0 && d.body.size() <= 4000
+          && d.startsAt is string && d.endsAt is string && d.active is bool);
     }
 
     function validCatalogImage(d) {
@@ -59,10 +79,10 @@ service cloud.firestore {
     }
 
     match /{col}/{id} {
-      allow read: if col in ['services', 'products', 'branches', 'promotions', 'stylists']
+      allow read: if col in ['services', 'products', 'branches', 'promotions', 'stylists', 'rewardVouchers', 'shopEvents']
         || (admin() && col in ['appointments', 'orders', 'bankTransferEvents', 'contacts', 'reviews', 'users']);
-      allow create, update: if admin() && col in ['services', 'products', 'branches', 'promotions', 'stylists'] && validAdminCatalog(col);
-      allow delete: if admin() && (col in ['services', 'products', 'branches', 'promotions', 'stylists', 'reviews']);
+      allow create, update: if admin() && col in ['services', 'products', 'branches', 'promotions', 'stylists', 'rewardVouchers', 'shopEvents'] && validAdminCatalog(col);
+      allow delete: if admin() && (col in ['services', 'products', 'branches', 'promotions', 'stylists', 'rewardVouchers', 'shopEvents', 'reviews']);
     }
 
     // Checkout and inventory changes are performed by a trusted server endpoint.
@@ -72,11 +92,59 @@ service cloud.firestore {
     }
 
     match /users/{uid} {
-      allow read, write: if owns(uid);
+      allow read: if owns(uid);
+      allow create: if owns(uid) && request.resource.data.keys().hasOnly(['name', 'phone', 'avatarUrl', 'email', 'displayName', 'phoneNumber', 'fcmToken']);
+      allow update: if owns(uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'phone', 'avatarUrl', 'email', 'displayName', 'phoneNumber', 'fcmToken']);
+    }
+
+    match /users/{uid}/chat_sessions/{sessionId} {
+      allow read, delete: if owns(uid);
+      allow create: if owns(uid)
+        && request.resource.data.keys().hasOnly(['id', 'title', 'createdAt', 'updatedAt'])
+        && request.resource.data.keys().hasAll(['id', 'title', 'createdAt', 'updatedAt'])
+        && request.resource.data.id == sessionId
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 30
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt is timestamp;
+      allow update: if owns(uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updatedAt'])
+        && request.resource.data.updatedAt is timestamp;
+
+      match /messages/{messageId} {
+        allow read, delete: if owns(uid);
+        allow create: if owns(uid)
+          && request.resource.data.keys().hasOnly(['id', 'sender', 'text', 'timestamp'])
+          && request.resource.data.keys().hasAll(['id', 'sender', 'text', 'timestamp'])
+          && request.resource.data.id == messageId
+          && request.resource.data.sender in ['user', 'ai']
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 10000
+          && request.resource.data.timestamp is timestamp;
+        allow update: if false;
+      }
     }
 
     match /users/{uid}/addresses/{id} {
       allow read, write: if owns(uid);
+    }
+
+    match /users/{uid}/vouchers/{voucherId} {
+      allow read: if owns(uid);
+      allow write: if false;
+    }
+
+    match /users/{uid}/voucherUsages/{usageId} {
+      allow read: if owns(uid);
+      allow write: if false;
+    }
+
+    match /users/{uid}/loyaltyTransactions/{transactionId} {
+      allow read: if owns(uid);
+      allow write: if false;
     }
 
     match /contacts/{id} {
@@ -155,7 +223,8 @@ service cloud.firestore {
               && request.resource.data.orderId is string
               && request.resource.data.orderId.size() > 0
               && rid == request.resource.data.orderId + '_' + request.resource.data.targetId
-              && get(/databases/$(db)/documents/orders/$(request.resource.data.orderId)).data.status == 'delivered'
+              && get(/databases/$(db)/documents/orders/$(request.resource.data.orderId)).data.status == 'completed'
+              && get(/databases/$(db)/documents/orders/$(request.resource.data.orderId)).data.paymentStatus == 'paid'
               && get(/databases/$(db)/documents/orders/$(request.resource.data.orderId)).data.userId == request.auth.uid));
     }
   }

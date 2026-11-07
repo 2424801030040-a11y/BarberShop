@@ -3,6 +3,10 @@
 **/build/
 local.properties
 .idea/workspace.xml
+.DS_Store
+**/.venv/
+**/__pycache__/
+*.py[cod]
 
 # Firebase project-specific configuration and credentials
 app/google-services.json
@@ -19,3 +23,7 @@ seed/node_modules/
 .env
 .env.*
 !.env.example
+
+ai-training/fused_model/
+ai-training/qwen_barbershop_lora/
+.venv/
