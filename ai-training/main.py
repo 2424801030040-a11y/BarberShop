@@ -167,11 +167,21 @@ def _chat_fallback(request: ChatRequest, store_context: str) -> str:
                 + "\n\nBạn hãy xem lại giá và tình trạng còn hàng trong ứng dụng trước khi đặt nhé."
             )
         return "Hiện mình chưa lấy được bảng giá mới nhất. Bạn vui lòng xem mục Cửa hàng trong ứng dụng hoặc liên hệ trực tiếp Chi Phèo BarberShop để được báo giá chính xác."
-    return (
-        "Máy chủ tư vấn AI đang tạm thời không kết nối được với mô hình. Bạn có thể cho mình biết chất tóc, "
-        "độ dài hiện tại và kiểu tóc mong muốn; trong lúc chờ, hãy xem mục Cửa hàng trong ứng dụng để kiểm tra "
-        "dịch vụ và sản phẩm đang có."
-    )
+
+    notice = "Mô hình tư vấn chính đang tạm gián đoạn, nên đây là gợi ý dự phòng. "
+    if any(word in message for word in ("chào", "hello", "hi", "alo")):
+        return notice + "Chào bạn! Bạn muốn tư vấn kiểu tóc, chăm sóc tóc hay dịch vụ tại tiệm? Cho mình biết chất tóc và độ dài hiện tại nhé."
+    if "tròn" in message:
+        suggestion = "Với mặt tròn, bạn có thể tham khảo side part hoặc textured crop, giữ phần đỉnh có độ phồng vừa phải và hai bên gọn để tạo cảm giác gương mặt dài hơn."
+    elif "trái tim" in message:
+        suggestion = "Với mặt trái tim, bạn có thể tham khảo mái lệch hoặc layer vừa phải để cân bằng phần trán; tránh làm phần đỉnh quá phồng."
+    elif "vuông" in message:
+        suggestion = "Với mặt vuông, side part hoặc textured crop có thể giúp tổng thể mềm mại và gọn gàng; thợ có thể điều chỉnh độ chuyển hai bên theo sở thích."
+    elif "dài" in message:
+        suggestion = "Với mặt dài, textured crop hoặc kiểu có mái nhẹ thường giúp tỷ lệ trông cân đối hơn; nên giữ phần đỉnh vừa phải."
+    else:
+        suggestion = "Bạn có thể tham khảo side part nếu muốn gọn lịch sự, textured crop nếu thích tự nhiên, hoặc crew cut nếu ưu tiên dễ chăm sóc."
+    return notice + suggestion + " Nếu cho biết dáng mặt, chất tóc và độ dài mong muốn, mình sẽ giúp thu hẹp lựa chọn."
 
 
 def _proxy_request(path: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -193,6 +203,15 @@ def _proxy_request(path: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any
     headers["authorization"] = f"Bearer {token}"
 
     try:
+        # A dead Kaggle quick tunnel often fails immediately at /health. Probe it
+        # before starting a long generation request so callers can use fallback
+        # guidance instead of waiting for the full inference timeout.
+        health = requests.get(base_url + "/health", timeout=(3, 5))
+        health.raise_for_status()
+        health_data = health.json()
+        if not isinstance(health_data, dict) or health_data.get("model_loaded") is not True:
+            print("Kaggle inference endpoint is reachable but the model is not ready.")
+            return None
         response = requests.post(
             base_url + path,
             json=payload,
@@ -266,15 +285,14 @@ def chat_endpoint(request: ChatRequest, authorization: Optional[str] = Header(de
         if isinstance(answer, str) and answer.strip():
             return {"success": True, "answer": answer.strip(), "reply": answer.strip(), "response": answer.strip()}
 
-    if os.environ.get("KAGGLE_SERVER_URL", "").strip():
-        from fastapi.responses import JSONResponse
-        return JSONResponse(
-            status_code=503,
-            content={"error": "Model trên Kaggle chưa sẵn sàng. Hãy mở notebook inference và kiểm tra tunnel."},
-        )
-
     answer = _chat_fallback(request, store_context)
-    return {"success": True, "answer": answer, "reply": answer, "response": answer, "fallback": True}
+    return {
+        "success": True,
+        "answer": answer,
+        "reply": answer,
+        "response": answer,
+        "fallback": bool(os.environ.get("KAGGLE_SERVER_URL", "").strip()),
+    }
 
 
 if __name__ == "__main__":
