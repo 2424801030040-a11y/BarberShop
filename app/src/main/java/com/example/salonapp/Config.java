@@ -12,11 +12,10 @@ public class Config {
     // Public Supabase project URL and publishable key used by trusted Edge Function endpoints.
     public static final String SUPABASE_URL = "https://qyvsjahijqtpskwslqku.supabase.co";
     public static final String SUPABASE_PUBLISHABLE_KEY = "sb_publishable_SP-FMcj7l3KzeG1ZQRm-gw_NmrIW9bw";
-    // Debug builds call the Mac over the LAN so both emulators and physical phones can reach it.
-    // Update this address if the Mac receives a different LAN IP.
-    public static final String BASE_URL = "https://chipheo-barber-ai.onrender.com/";
-    public static final String LOCAL_HAIR_AI_URL = "https://chipheo-barber-ai.onrender.com/api/chat";
-    public static final String LOCAL_FACE_CONSULT_URL = "https://chipheo-barber-ai.onrender.com/api/consult-face";
+    // Lightweight AI gateway deployed on Render. Keep the trailing slash for endpoint composition.
+    public static final String HAIR_AI_BASE_URL = "https://chipheo-barber-ai.onrender.com/";
+    public static final String HAIR_AI_CHAT_URL = HAIR_AI_BASE_URL + "api/chat";
+    public static final String HAIR_AI_FACE_URL = HAIR_AI_BASE_URL + "api/consult-face";
     public static boolean isSupabaseConfigured() {
         return !SUPABASE_URL.contains("YOUR_PROJECT_REF") && !SUPABASE_PUBLISHABLE_KEY.contains("YOUR_");
     }

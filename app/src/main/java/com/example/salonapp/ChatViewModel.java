@@ -163,7 +163,7 @@ public class ChatViewModel extends ViewModel {
                 errorMessage.setValue("Không thể tạo yêu cầu phân tích khuôn mặt.");
                 return;
             }
-            SupabaseFunctions.postLocalFaceConsult(payload, (result, requestError) -> {
+            SupabaseFunctions.postFaceConsultGateway(payload, (result, requestError) -> {
                 if (requestError != null || result == null) {
                     sending.setValue(false);
                     errorMessage.setValue(requestError == null
@@ -274,7 +274,7 @@ public class ChatViewModel extends ViewModel {
                     if (aiSaveError != null) errorMessage.setValue("Câu trả lời đã đến nhưng chưa lưu được vào lịch sử.");
                 });
             };
-            if (BuildConfig.DEBUG) SupabaseFunctions.postLocalHairAdvisor(payload, callback);
+            if (BuildConfig.DEBUG) SupabaseFunctions.postHairAdvisorGateway(payload, callback);
             else SupabaseFunctions.post(application, "hair-advisor", payload, callback);
         });
     }

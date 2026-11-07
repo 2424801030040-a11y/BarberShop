@@ -18,7 +18,7 @@ final class SupabaseFunctions {
     interface Callback { void onComplete(JSONObject result, String error); }
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
     private static final OkHttpClient CLIENT = new OkHttpClient.Builder().build();
-    private static final OkHttpClient LOCAL_AI_CLIENT = new OkHttpClient.Builder()
+    private static final OkHttpClient HAIR_AI_CLIENT = new OkHttpClient.Builder()
         .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
         .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
         .callTimeout(125, java.util.concurrent.TimeUnit.SECONDS)
@@ -34,19 +34,19 @@ final class SupabaseFunctions {
             .addOnFailureListener(error -> callback.onComplete(null, "Không xác thực được tài khoản. Vui lòng đăng nhập lại."));
     }
 
-    /** Calls the developer's local fine-tuned model. This method is used only by debug builds. */
-    static void postLocalHairAdvisor(JSONObject payload, Callback callback) {
-        postLocal(payload, Config.LOCAL_HAIR_AI_URL, callback);
+    /** Calls the lightweight Render gateway. The debug app uses this for its AI chat. */
+    static void postHairAdvisorGateway(JSONObject payload, Callback callback) {
+        postHairGateway(payload, Config.HAIR_AI_CHAT_URL, callback);
     }
 
-    /** Sends only facial geometry ratios to the local endpoint; image pixels remain on-device. */
-    static void postLocalFaceConsult(JSONObject payload, Callback callback) {
-        postLocal(payload, Config.LOCAL_FACE_CONSULT_URL, callback);
+    /** Sends only facial geometry ratios to Render; image pixels remain on-device. */
+    static void postFaceConsultGateway(JSONObject payload, Callback callback) {
+        postHairGateway(payload, Config.HAIR_AI_FACE_URL, callback);
     }
 
-    private static void postLocal(JSONObject payload, String endpoint, Callback callback) {
+    private static void postHairGateway(JSONObject payload, String endpoint, Callback callback) {
         if (!BuildConfig.DEBUG) {
-            callback.onComplete(null, "Mô hình AI local chỉ khả dụng trong bản debug.");
+            callback.onComplete(null, "Tư vấn tóc qua Render hiện chỉ khả dụng trong bản debug.");
             return;
         }
         new Thread(() -> {
@@ -57,19 +57,19 @@ final class SupabaseFunctions {
                     .url(endpoint)
                     .post(RequestBody.create(payload.toString(), JSON))
                     .build();
-                try (Response response = LOCAL_AI_CLIENT.newCall(request).execute()) {
+                try (Response response = HAIR_AI_CLIENT.newCall(request).execute()) {
                     String body = response.body() == null ? "{}" : response.body().string();
                     result = new JSONObject(body);
                     if (!response.isSuccessful()) {
-                        if (endpoint.equals(Config.LOCAL_FACE_CONSULT_URL) && response.code() == 422) {
+                        if (endpoint.equals(Config.HAIR_AI_FACE_URL) && response.code() == 422) {
                             error = "Chưa đo được khuôn mặt chính xác. Vui lòng đặt trọn khuôn mặt vào khung và quét lại.";
                         } else {
-                            error = result.optString("detail", result.optString("error", "Máy chủ AI local báo lỗi (HTTP " + response.code() + ")."));
+                            error = result.optString("detail", result.optString("error", "Máy chủ tư vấn tóc báo lỗi (HTTP " + response.code() + ")."));
                         }
                     }
                 }
             } catch (IOException | org.json.JSONException exception) {
-                error = "Không kết nối được AI local. Hãy chạy máy chủ trên Mac và kiểm tra địa chỉ trong Config.java.";
+                error = "Không kết nối được máy chủ tư vấn tóc trên Render. Vui lòng kiểm tra kết nối mạng hoặc thử lại sau.";
             }
             JSONObject answer = result;
             String failure = error;
