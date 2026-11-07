@@ -1,3 +1,4 @@
+import json
 import os
 import re
 from pathlib import Path
@@ -14,22 +15,41 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 app = FastAPI(title="BarberShop AI Advisory API")
 
 # ---------------------------------------------------------
-# 1. Khởi tạo Firebase Admin SDK
+# 1. Khởi tạo Firebase Admin SDK (An toàn tuyệt đối trên Cloud)
 # ---------------------------------------------------------
-CRED_PATH = os.environ.get("FIREBASE_CREDENTIALS", "serviceAccountKey.json")
+CRED_PATH = os.environ.get("FIREBASE_CREDENTIALS", "ai-training/serviceAccountKey.json")
+FIREBASE_JSON = os.environ.get("FIREBASE_JSON_CONTENT")
 
-if not firebase_admin._apps:
-    if os.path.exists(CRED_PATH):
-        cred = credentials.Certificate(CRED_PATH)
-        firebase_admin.initialize_app(cred)
+try:
+    if not firebase_admin._apps:
+        if FIREBASE_JSON:
+            # Ưu tiên đọc từ biến môi trường FIREBASE_JSON_CONTENT trên Render
+            cred_dict = json.loads(FIREBASE_JSON)
+            cred = credentials.Certificate(cred_dict)
+            firebase_admin.initialize_app(cred)
+            db = firestore.client()
+            print("Đã kết nối Firebase qua biến môi trường Cloud thành công!")
+        elif os.path.exists(CRED_PATH):
+            # Đọc từ file local khi chạy trên máy Mac
+            cred = credentials.Certificate(CRED_PATH)
+            firebase_admin.initialize_app(cred)
+            db = firestore.client()
+            print("Đã kết nối Firebase qua file local thành công!")
+        else:
+            print("[Cảnh báo] Không tìm thấy credentials Firebase. Chạy ở chế độ fallback.")
+            db = None
     else:
-        firebase_admin.initialize_app()
-
-db = firestore.client()
+        db = firestore.client()
+except Exception as firebase_err:
+    print(f"[Cảnh báo] Không thể kết nối Firebase: {firebase_err}")
+    db = None
 
 
 def get_store_data_from_firebase() -> str:
-    """Truy vấn dịch vụ và sản phẩm từ Firestore."""
+    """Truy vấn dịch vụ và sản phẩm từ Firestore (Bảo vệ khi không kết nối được Firebase)."""
+    if db is None:
+        return "Vui lòng tham khảo thông tin dịch vụ và sản phẩm trực tiếp trên ứng dụng.\n"
+
     info_parts = []
 
     # Lấy danh mục Dịch vụ
