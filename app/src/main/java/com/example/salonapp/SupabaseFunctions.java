@@ -87,7 +87,8 @@ final class SupabaseFunctions {
                 .addHeader("Authorization", "Bearer " + token.getToken())
                 .post(RequestBody.create(payload.toString(), JSON))
                 .build();
-            try (Response response = CLIENT.newCall(request).execute()) {
+            OkHttpClient client = "hair-advisor".equals(function) ? HAIR_AI_CLIENT : CLIENT;
+            try (Response response = client.newCall(request).execute()) {
                 String body = response.body() == null ? "{}" : response.body().string();
                 result = new JSONObject(body);
                 if (!response.isSuccessful()) error = result.optString("error", "Yêu cầu thất bại (HTTP " + response.code() + ").");

@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 
 import firebase_admin
 import requests
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, HTTPException
 from firebase_admin import credentials, firestore
 from pydantic import BaseModel, Field
 
@@ -179,16 +179,18 @@ def _proxy_request(path: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any
     if not base_url:
         return None
 
-    timeout = 25
+    timeout = 90
     try:
-        timeout = max(3, min(30, int(os.environ.get("KAGGLE_PROXY_TIMEOUT_SECONDS", "25"))))
+        timeout = max(3, min(105, int(os.environ.get("KAGGLE_PROXY_TIMEOUT_SECONDS", "90"))))
     except ValueError:
         pass
 
     headers = {"content-type": "application/json"}
     token = os.environ.get("KAGGLE_SERVER_TOKEN", "").strip()
-    if token:
-        headers["authorization"] = f"Bearer {token}"
+    if not token:
+        print("Kaggle inference token is not configured.")
+        return None
+    headers["authorization"] = f"Bearer {token}"
 
     try:
         response = requests.post(
@@ -243,22 +245,33 @@ def consult_face_endpoint(request: FaceConsultRequest):
 
 
 @app.post("/api/chat")
-def chat_endpoint(request: ChatRequest):
+def chat_endpoint(request: ChatRequest, authorization: Optional[str] = Header(default=None)):
+    app_token = os.environ.get("APP_GATEWAY_TOKEN", "").strip()
+    if not app_token or authorization != f"Bearer {app_token}":
+        raise HTTPException(status_code=401, detail="Unauthorized.")
     message = request.message.strip()
     if not message:
         return {"success": True, "answer": "Bạn hãy nhập câu hỏi về kiểu tóc, chăm sóc tóc hoặc dịch vụ của tiệm nhé.", "reply": "Bạn hãy nhập câu hỏi về kiểu tóc, chăm sóc tóc hoặc dịch vụ của tiệm nhé."}
 
     store_context = get_store_data_from_firebase()
     payload = request.model_dump(exclude_none=True)
-    payload["message"] = (
-        f"{message}\n\n[Thông tin tham khảo từ Firestore; chỉ dùng đúng dữ liệu này, không tự đoán giá.]\n"
-        f"{store_context[:2200]}"
-    )[:3900]
+    if "Danh mục hiện tại của cửa hàng" not in message:
+        payload["message"] = (
+            f"{message}\n\n[Thông tin tham khảo từ Firestore; chỉ dùng đúng dữ liệu này, không tự đoán giá.]\n"
+            f"{store_context[:1200]}"
+        )[:3900]
     result = _proxy_request("/api/chat", payload)
     if result:
         answer = result.get("answer") or result.get("reply") or result.get("response")
         if isinstance(answer, str) and answer.strip():
             return {"success": True, "answer": answer.strip(), "reply": answer.strip(), "response": answer.strip()}
+
+    if os.environ.get("KAGGLE_SERVER_URL", "").strip():
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=503,
+            content={"error": "Model trên Kaggle chưa sẵn sàng. Hãy mở notebook inference và kiểm tra tunnel."},
+        )
 
     answer = _chat_fallback(request, store_context)
     return {"success": True, "answer": answer, "reply": answer, "response": answer, "fallback": True}
