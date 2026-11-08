@@ -157,8 +157,23 @@ def _face_fallback(shape: str) -> str:
     )
 
 
+def _original_chat_message(message: str) -> str:
+    """Strip server-added context so fallback routing uses only the user's text."""
+    text = message.strip()
+    marker = "Câu hỏi mới:"
+    if text.startswith(marker):
+        first_line = text.splitlines()[0]
+        return first_line[len(marker):].strip().lower()
+    context_marker = "\n\n[Thông tin tham khảo từ Firestore;"
+    if context_marker in text:
+        text = text.split(context_marker, 1)[0]
+    return text.lower()
+
+
 def _chat_fallback(request: ChatRequest, store_context: str) -> str:
-    message = request.message.strip().lower()
+    # The Supabase Edge Function appends the shop catalog to the message sent
+    # to Render. Do not mistake those context words for the customer's intent.
+    message = _original_chat_message(request.message)
     if any(keyword in message for keyword in ("giá", "bao nhiêu", "dịch vụ", "sản phẩm")):
         if db is not None and ("Dịch vụ:" in store_context or "Sản phẩm:" in store_context):
             return (
@@ -171,6 +186,8 @@ def _chat_fallback(request: ChatRequest, store_context: str) -> str:
     notice = "Mô hình tư vấn chính đang tạm gián đoạn, nên đây là gợi ý dự phòng. "
     if any(word in message for word in ("chào", "hello", "hi", "alo")):
         return notice + "Chào bạn! Bạn muốn tư vấn kiểu tóc, chăm sóc tóc hay dịch vụ tại tiệm? Cho mình biết chất tóc và độ dài hiện tại nhé."
+    if any(phrase in message for phrase in ("oke", "ok", "cảm ơn", "cam on", "thanks", "thank you")):
+        return "Dạ, khi nào cần tư vấn kiểu tóc hoặc thông tin dịch vụ, bạn cứ nhắn mình nhé."
     if "tròn" in message:
         suggestion = "Với mặt tròn, bạn có thể tham khảo side part hoặc textured crop, giữ phần đỉnh có độ phồng vừa phải và hai bên gọn để tạo cảm giác gương mặt dài hơn."
     elif "trái tim" in message:
