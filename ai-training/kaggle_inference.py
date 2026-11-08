@@ -54,18 +54,33 @@ def load_model() -> None:
     global tokenizer, model
     if not MODEL_DIR.is_dir():
         raise RuntimeError(f"Model directory not found: {MODEL_DIR}")
-    tokenizer = AutoTokenizer.from_pretrained(str(MODEL_DIR), trust_remote_code=True)
-    dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+    print(f"Loading tokenizer from local files: {MODEL_DIR}", flush=True)
+    tokenizer = AutoTokenizer.from_pretrained(
+        str(MODEL_DIR), trust_remote_code=True, local_files_only=True
+    )
+    use_gpu = torch.cuda.is_available()
+    dtype = torch.float16 if use_gpu else torch.float32
+    if use_gpu:
+        print(
+            f"Loading model directly onto {torch.cuda.get_device_name(0)}; "
+            f"visible GPUs={torch.cuda.device_count()}",
+            flush=True,
+        )
+    else:
+        print("CUDA is unavailable; loading the model on CPU.", flush=True)
     model = AutoModelForCausalLM.from_pretrained(
         str(MODEL_DIR),
         torch_dtype=dtype,
         low_cpu_mem_usage=True,
         trust_remote_code=True,
+        local_files_only=True,
+        device_map="auto" if use_gpu else None,
     )
-    if torch.cuda.is_available():
+    print("Model weights loaded; finalizing model.", flush=True)
+    if use_gpu and not getattr(model, "hf_device_map", None):
         model.to("cuda")
     model.eval()
-    print(f"Loaded model from {MODEL_DIR}; cuda={torch.cuda.is_available()}", flush=True)
+    print(f"Loaded model from {MODEL_DIR}; cuda={use_gpu}", flush=True)
 
 
 def generate(messages: List[Dict[str, str]], max_tokens: int) -> str:
