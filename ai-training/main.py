@@ -189,9 +189,12 @@ def _proxy_request(path: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any
     if not base_url:
         return None
 
-    timeout = 90
+    # Supabase's hair-advisor caller has a bounded request window and retries
+    # once after a timeout. Keep Kaggle inference short enough for Render to
+    # return its built-in fallback before that caller gives up.
+    timeout = 35
     try:
-        timeout = max(3, min(105, int(os.environ.get("KAGGLE_PROXY_TIMEOUT_SECONDS", "90"))))
+        timeout = max(3, min(35, int(os.environ.get("KAGGLE_PROXY_TIMEOUT_SECONDS", "35"))))
     except ValueError:
         pass
 
