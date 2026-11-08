@@ -9,7 +9,7 @@ local.properties
 *.py[cod]
 
 # Firebase project-specific configuration and credentials
-app/google-services.json
+#app/google-services.json
 seed/serviceAccountKey.json
 serviceAccountKey*.json
 *.hprof
