@@ -7,6 +7,7 @@ server; otherwise the API returns safe Vietnamese fallback guidance.
 
 import json
 import os
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -222,29 +223,48 @@ def _proxy_request(path: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any
         return None
     headers["authorization"] = f"Bearer {token}"
 
-    try:
-        # A dead Kaggle quick tunnel often fails immediately at /health. Probe it
-        # before starting a long generation request so callers can use fallback
-        # guidance instead of waiting for the full inference timeout.
-        health = requests.get(base_url + "/health", timeout=(3, 5))
-        health.raise_for_status()
-        health_data = health.json()
-        if not isinstance(health_data, dict) or health_data.get("model_loaded") is not True:
-            print("Kaggle inference endpoint is reachable but the model is not ready.")
+    # Retry connection and gateway failures, but never resubmit a generation
+    # after a read timeout: the first request may still be consuming GPU time.
+    for attempt in range(2):
+        try:
+            health = requests.get(base_url + "/health", timeout=(3, 5))
+            health.raise_for_status()
+            health_data = health.json()
+            if not isinstance(health_data, dict) or health_data.get("model_loaded") is not True:
+                print("Kaggle inference endpoint is reachable but the model is not ready.")
+                return None
+        except (requests.ConnectTimeout, requests.ConnectionError, requests.HTTPError, ValueError) as error:
+            if attempt == 0:
+                print(f"Kaggle health probe failed ({error.__class__.__name__}); retrying once.")
+                time.sleep(1)
+                continue
+            print(f"Kaggle inference endpoint is unavailable ({error.__class__.__name__}).")
             return None
-        response = requests.post(
-            base_url + path,
-            json=payload,
-            headers=headers,
-            timeout=(4, timeout),
-        )
-        response.raise_for_status()
-        result = response.json()
-        return result if isinstance(result, dict) else None
-    except (requests.RequestException, ValueError) as error:
-        # Do not log request bodies, credentials, or customer messages.
-        print(f"Kaggle inference proxy failed ({error.__class__.__name__}).")
-        return None
+        except requests.ReadTimeout as error:
+            print(f"Kaggle health probe timed out ({error.__class__.__name__}).")
+            return None
+
+        try:
+            response = requests.post(base_url + path, json=payload, headers=headers, timeout=(4, timeout))
+            if response.status_code in (502, 503, 504) and attempt == 0:
+                print("Kaggle inference returned a transient gateway error; retrying once.")
+                time.sleep(1)
+                continue
+            response.raise_for_status()
+            result = response.json()
+            return result if isinstance(result, dict) else None
+        except requests.ReadTimeout as error:
+            print(f"Kaggle inference exceeded its response window ({error.__class__.__name__}).")
+            return None
+        except (requests.ConnectTimeout, requests.ConnectionError, requests.HTTPError, ValueError) as error:
+            if attempt == 0 and isinstance(error, (requests.ConnectTimeout, requests.ConnectionError)):
+                print(f"Kaggle inference connection failed ({error.__class__.__name__}); retrying once.")
+                time.sleep(1)
+                continue
+            # Do not log request bodies, credentials, or customer messages.
+            print(f"Kaggle inference proxy failed ({error.__class__.__name__}).")
+            return None
+    return None
 
 
 @app.get("/")
@@ -254,11 +274,14 @@ def root():
 
 @app.get("/health")
 def health_endpoint():
+    proxy_configured = bool(os.environ.get("KAGGLE_SERVER_URL", "").strip())
     return {
         "success": True,
+        "gateway_ready": True,
         "model_loaded": False,
-        "mode": "proxy" if os.environ.get("KAGGLE_SERVER_URL", "").strip() else "fallback",
-        "kaggle_proxy_configured": bool(os.environ.get("KAGGLE_SERVER_URL", "").strip()),
+        "mode": "proxy" if proxy_configured else "fallback",
+        "inference_backend": "kaggle" if proxy_configured else "local_fallback",
+        "kaggle_proxy_configured": proxy_configured,
         "firebase_available": db is not None,
     }
 
@@ -292,19 +315,26 @@ def chat_endpoint(request: ChatRequest, authorization: Optional[str] = Header(de
     if not message:
         return {"success": True, "answer": "Bạn hãy nhập câu hỏi về kiểu tóc, chăm sóc tóc hoặc dịch vụ của tiệm nhé.", "reply": "Bạn hãy nhập câu hỏi về kiểu tóc, chăm sóc tóc hoặc dịch vụ của tiệm nhé."}
 
-    store_context = get_store_data_from_firebase()
     payload = request.model_dump(exclude_none=True)
-    if "Danh mục hiện tại của cửa hàng" not in message:
+    has_shop_context = "Danh mục hiện tại của cửa hàng" in message
+    if not has_shop_context:
+        store_context = get_store_data_from_firebase()
         payload["message"] = (
             f"{message}\n\n[Thông tin tham khảo từ Firestore; chỉ dùng đúng dữ liệu này, không tự đoán giá.]\n"
             f"{store_context[:1200]}"
         )[:3900]
+    else:
+        # Supabase already attached the current catalog; avoid a duplicate
+        # Firestore read on the normal model-success path.
+        store_context = ""
     result = _proxy_request("/api/chat", payload)
     if result:
         answer = result.get("answer") or result.get("reply") or result.get("response")
         if isinstance(answer, str) and answer.strip():
             return {"success": True, "answer": answer.strip(), "reply": answer.strip(), "response": answer.strip()}
 
+    if not store_context:
+        store_context = get_store_data_from_firebase()
     answer = _chat_fallback(request, store_context)
     return {
         "success": True,

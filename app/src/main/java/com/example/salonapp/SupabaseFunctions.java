@@ -20,8 +20,8 @@ final class SupabaseFunctions {
     private static final OkHttpClient CLIENT = new OkHttpClient.Builder().build();
     private static final OkHttpClient HAIR_AI_CLIENT = new OkHttpClient.Builder()
         .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
-        .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
-        .callTimeout(125, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(155, java.util.concurrent.TimeUnit.SECONDS)
+        .callTimeout(160, java.util.concurrent.TimeUnit.SECONDS)
         .build();
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private SupabaseFunctions() { }
@@ -34,7 +34,7 @@ final class SupabaseFunctions {
             .addOnFailureListener(error -> callback.onComplete(null, "Không xác thực được tài khoản. Vui lòng đăng nhập lại."));
     }
 
-    /** Calls the lightweight Render gateway. The debug app uses this for its AI chat. */
+    /** Calls the lightweight Render gateway for chat and face consultations. */
     static void postHairAdvisorGateway(JSONObject payload, Callback callback) {
         postHairGateway(payload, Config.HAIR_AI_CHAT_URL, callback);
     }
@@ -45,10 +45,6 @@ final class SupabaseFunctions {
     }
 
     private static void postHairGateway(JSONObject payload, String endpoint, Callback callback) {
-        if (!BuildConfig.DEBUG) {
-            callback.onComplete(null, "Tư vấn tóc qua Render hiện chỉ khả dụng trong bản debug.");
-            return;
-        }
         new Thread(() -> {
             JSONObject result = null;
             String error = null;

@@ -42,6 +42,19 @@ Deno.serve(async request => {
     const message = clean(body?.message, 1200);
     if (!message) throw new HttpError("Hãy nhập câu hỏi hoặc điều bạn muốn thay đổi.", 400);
     const preferences = body?.preferences && typeof body.preferences === "object" ? body.preferences : {};
+    const gatewayUrl = Deno.env.get("HAIR_AI_GATEWAY_URL")?.trim().replace(/\/$/, "");
+    const gatewayToken = Deno.env.get("HAIR_AI_GATEWAY_TOKEN")?.trim();
+    if (!gatewayUrl || !gatewayToken) throw new Error("Hair-advisor gateway is not configured.");
+    // Wake Render's free instance while the shop catalog is being fetched. This
+    // keeps its cold-start delay out of the model request's time window.
+    const gatewayWake = fetch(`${gatewayUrl}/health`, {
+      signal: AbortSignal.timeout(50_000),
+    }).then(response => {
+      if (!response.ok) throw new Error(`Gateway warm-up returned HTTP ${response.status}.`);
+    }).catch(error => {
+      console.warn("Hair-advisor gateway warm-up did not finish before the deadline.",
+        error instanceof Error ? error.name : "Unknown error");
+    });
     const [services, products] = await Promise.all([shopCatalog("services"), shopCatalog("products")]);
     const catalog = {
       services: services.slice(0, 8).map(item => ({ name: clean(item.name, 80), description: clean(item.description, 100), priceVnd: Number(item.price) || 0, durationMinutes: Number(item.durationMinutes) || null })),
@@ -71,14 +84,17 @@ Deno.serve(async request => {
       lastUserTurn.parts[0].text = context;
     }
 
-    const gatewayUrl = Deno.env.get("HAIR_AI_GATEWAY_URL")?.trim().replace(/\/$/, "");
-    const gatewayToken = Deno.env.get("HAIR_AI_GATEWAY_TOKEN")?.trim();
-    if (!gatewayUrl || !gatewayToken) throw new Error("Hair-advisor gateway is not configured.");
-    const response = await fetch(`${gatewayUrl}/api/chat`, {
+    const gatewayRequest = {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${gatewayToken}` },
       body: JSON.stringify({ message: context, preferences, history, max_tokens: 420 }),
-      signal: AbortSignal.timeout(115_000),
+    };
+    await gatewayWake;
+    // Keep the combined warm-up and model request below Supabase Free's
+    // 150-second execution limit, including time spent building shop context.
+    const response = await fetch(`${gatewayUrl}/api/chat`, {
+      ...gatewayRequest,
+      signal: AbortSignal.timeout(90_000),
     });
     if (!response.ok) {
       const detail = (await response.text()).slice(0, 1500);
