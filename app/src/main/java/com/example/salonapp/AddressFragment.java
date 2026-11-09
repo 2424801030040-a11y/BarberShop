@@ -31,6 +31,7 @@ public class AddressFragment extends Fragment {
     private EditText currentAddressInput;
     private TextView locationStatus;
     private LocationListener locationListener;
+    private int locationRequestId;
     private final Handler locationHandler = new Handler(Looper.getMainLooper());
     private final ActivityResultLauncher<String[]> locationPermission = registerForActivityResult(
             new ActivityResultContracts.RequestMultiplePermissions(), result -> {
@@ -133,16 +134,20 @@ public class AddressFragment extends Fragment {
             data.put("isDefault", docs.isEmpty());
             dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setEnabled(false);
             col.add(data).addOnSuccessListener(result -> {
+                if (!isAdded()) return;
                 currentAddressInput = null;
                 locationStatus = null;
-                dialog.dismiss();
+                if (dialog.isShowing()) dialog.dismiss();
                 load();
             }).addOnFailureListener(error -> {
+                if (!isAdded() || !dialog.isShowing()) return;
                 dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setEnabled(true);
-                Toast.makeText(requireContext(), "Không lưu được địa chỉ. Vui lòng thử lại.", Toast.LENGTH_LONG).show();
+                android.content.Context context = getContext();
+                if (context != null) Toast.makeText(context, "Không lưu được địa chỉ. Vui lòng thử lại.", Toast.LENGTH_LONG).show();
             });
         }));
         dialog.setOnDismissListener(ignored -> {
+            locationRequestId++;
             stopLocationUpdates();
             currentAddressInput = null;
             locationStatus = null;
@@ -193,24 +198,33 @@ public class AddressFragment extends Fragment {
         }
         showLocationStatus("Đang xác định vị trí...");
         stopLocationUpdates();
+        final int requestId = ++locationRequestId;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            for (String provider : providers) {
-                manager.getCurrentLocation(provider, null, ContextCompat.getMainExecutor(requireContext()), location -> {
-                    if (location != null && currentAddressInput != null) {
+            try {
+                for (String provider : providers) {
+                    manager.getCurrentLocation(provider, null, ContextCompat.getMainExecutor(requireContext()), location -> {
+                        if (requestId != locationRequestId || location == null || currentAddressInput == null) return;
                         stopLocationUpdates();
-                        fillAddressFromLocation(location);
-                    }
-                });
+                        fillAddressFromLocation(location, requestId);
+                    });
+                }
+            } catch (SecurityException error) {
+                showLocationStatus("Không có quyền truy cập vị trí.");
+                return;
+            } catch (RuntimeException error) {
+                showLocationStatus("Không thể lấy vị trí lúc này. Hãy nhập địa chỉ thủ công.");
+                return;
             }
             locationHandler.postDelayed(() -> {
-                if (currentAddressInput != null && "Đang xác định vị trí...".contentEquals(locationStatus.getText()))
+                if (requestId == locationRequestId && currentAddressInput != null && locationStatus != null
+                        && "Đang xác định vị trí...".contentEquals(locationStatus.getText()))
                     showLocationStatus("Chưa lấy được vị trí. Hãy thử lại hoặc nhập địa chỉ thủ công.");
             }, 15000);
         } else {
             locationListener = new LocationListener() {
                 @Override public void onLocationChanged(@NonNull Location location) {
                     stopLocationUpdates();
-                    fillAddressFromLocation(location);
+                    fillAddressFromLocation(location, requestId);
                 }
             };
             try {
@@ -223,17 +237,20 @@ public class AddressFragment extends Fragment {
                 }, 15000);
             } catch (SecurityException error) {
                 showLocationStatus("Không có quyền truy cập vị trí.");
+            } catch (RuntimeException error) {
+                showLocationStatus("Không thể lấy vị trí lúc này. Hãy nhập địa chỉ thủ công.");
             }
         }
     }
 
-    private void fillAddressFromLocation(Location location) {
+    private void fillAddressFromLocation(Location location, int requestId) {
         if (!isAdded() || currentAddressInput == null) return;
         showLocationStatus("Đã lấy vị trí. Đang tìm địa chỉ...");
+        android.content.Context appContext = requireContext().getApplicationContext();
         new Thread(() -> {
             String result = String.format(Locale.getDefault(), "%.6f, %.6f", location.getLatitude(), location.getLongitude());
             try {
-                Geocoder geocoder = new Geocoder(requireContext(), Locale.getDefault());
+                Geocoder geocoder = new Geocoder(appContext, Locale.getDefault());
                 List<Address> matches = geocoder.getFromLocation(location.getLatitude(), location.getLongitude(), 1);
                 if (matches != null && !matches.isEmpty()) {
                     String formatted = matches.get(0).getAddressLine(0);
@@ -241,8 +258,9 @@ public class AddressFragment extends Fragment {
                 }
             } catch (Exception ignored) { /* Coordinates are still a usable location fallback. */ }
             String finalAddress = result;
-            if (isAdded()) requireActivity().runOnUiThread(() -> {
-                if (currentAddressInput == null) return;
+            android.app.Activity activity = getActivity();
+            if (activity != null) activity.runOnUiThread(() -> {
+                if (requestId != locationRequestId || !isAdded() || currentAddressInput == null) return;
                 currentAddressInput.setText(finalAddress);
                 currentAddressInput.setSelection(finalAddress.length());
                 showLocationStatus("Đã điền vị trí hiện tại. Vui lòng kiểm tra lại địa chỉ.");

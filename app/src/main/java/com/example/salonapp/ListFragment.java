@@ -48,6 +48,7 @@ public class ListFragment extends Fragment {
             Toast.makeText(getContext(), added ? "Đã thêm vào giỏ hàng" : "Hết hàng hoặc đã đạt giới hạn tồn kho", Toast.LENGTH_SHORT).show();
             if (getActivity() instanceof MainActivity) ((MainActivity) getActivity()).refreshCartBadge();
         });
+        if (col.equals("services")) adapter.setOnBookNow(i -> open(BookingFragment.forService(i.id)));
         adapter.setOnClick(i -> {
             if (products) {
                 // Keep the card itself focused on details; cart actions are explicit.

@@ -35,6 +35,7 @@ import java.util.TimeZone;
 
 /** Branch → stylist → service → date → conflict-free time selection. */
 public class BookingFragment extends Fragment {
+    private static final String ARG_SERVICE_ID = "serviceId";
     private final Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("Asia/Ho_Chi_Minh"), Locale.getDefault());
     private final List<Item> branches = new ArrayList<>();
     private final List<Item> allStylists = new ArrayList<>();
@@ -45,12 +46,21 @@ public class BookingFragment extends Fragment {
     private int slotRequestVersion;
     private Spinner spBranch, spStylist, spService, spTime;
     private Button btnDate, btnConfirm;
+    private String preselectedServiceId;
     private final FirebaseFirestore db = FirebaseFirestore.getInstance();
 
     private static abstract class SelectionListener implements android.widget.AdapterView.OnItemSelectedListener {
         abstract void onSelected();
         @Override public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long id) { onSelected(); }
         @Override public void onNothingSelected(android.widget.AdapterView<?> parent) {}
+    }
+
+    public static BookingFragment forService(String serviceId) {
+        BookingFragment fragment = new BookingFragment();
+        Bundle args = new Bundle();
+        args.putString(ARG_SERVICE_ID, serviceId);
+        fragment.setArguments(args);
+        return fragment;
     }
 
     @Nullable @Override public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup parent, @Nullable Bundle state) {
@@ -61,6 +71,7 @@ public class BookingFragment extends Fragment {
         spTime = view.findViewById(R.id.spTime);
         btnDate = view.findViewById(R.id.btnDate);
         btnConfirm = view.findViewById(R.id.btnConfirm);
+        preselectedServiceId = getArguments() == null ? null : getArguments().getString(ARG_SERVICE_ID);
 
         spBranch.setOnItemSelectedListener(new SelectionListener() { @Override void onSelected() { filterStylists(); } });
         spStylist.setOnItemSelectedListener(new SelectionListener() { @Override void onSelected() { refreshSlots(); } });
@@ -70,7 +81,18 @@ public class BookingFragment extends Fragment {
 
         load("branches", branches, spBranch, this::filterStylists);
         load("stylists", allStylists, null, this::filterStylists);
-        load("services", services, spService, this::refreshSlots);
+        load("services", services, spService, () -> {
+            if (preselectedServiceId != null) {
+                for (int i = 0; i < services.size(); i++) {
+                    if (preselectedServiceId.equals(services.get(i).id)) {
+                        spService.setSelection(i);
+                        break;
+                    }
+                }
+                preselectedServiceId = null;
+            }
+            refreshSlots();
+        });
         return view;
     }
 

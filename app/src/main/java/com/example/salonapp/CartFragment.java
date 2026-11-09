@@ -88,22 +88,30 @@ public class CartFragment extends Fragment {
         List<String> promoRows = new ArrayList<>();
         List<DocumentSnapshot> promotionDocuments = new ArrayList<>();
         List<DocumentSnapshot> rewardDocuments = new ArrayList<>();
+        Set<String> usedPromoCodes = new HashSet<>();
+        boolean[] promoUsageLoaded = {false};
         ArrayAdapter<String> promoAdapter = new ArrayAdapter<>(requireContext(), android.R.layout.simple_dropdown_item_1line, promoRows);
         Runnable rebuildPromoOptions = () -> {
             promoCodes.clear(); promoRows.clear(); promotionOffers.clear();
             long now = System.currentTimeMillis();
-            for (DocumentSnapshot doc : promotionDocuments) {
-                String code = doc.getString("code");
-                if (code == null || code.trim().isEmpty() || Boolean.FALSE.equals(doc.getBoolean("active")) || isPromotionOutsideDates(doc, now)) continue;
-                Number percent = (Number) doc.get("percent"), amount = (Number) doc.get("discountAmount"), minimum = (Number) doc.get("minSubtotal");
-                addPromoOption(code, doc.getString("name"), percent == null ? 0 : percent.doubleValue(), amount == null ? 0 : amount.doubleValue(), minimum == null ? 0 : minimum.doubleValue(), promoCodes, promoRows);
+            if (promoUsageLoaded[0]) {
+                for (DocumentSnapshot doc : promotionDocuments) {
+                    String code = doc.getString("code");
+                    if (code == null || code.trim().isEmpty() || usedPromoCodes.contains(code.trim().toUpperCase(Locale.ROOT))
+                            || Boolean.FALSE.equals(doc.getBoolean("active")) || isPromotionOutsideDates(doc, now)) continue;
+                    Number percent = (Number) doc.get("percent"), amount = (Number) doc.get("discountAmount"), minimum = (Number) doc.get("minSubtotal");
+                    addPromoOption(code, doc.getString("name"), percent == null ? 0 : percent.doubleValue(), amount == null ? 0 : amount.doubleValue(), minimum == null ? 0 : minimum.doubleValue(), promoCodes, promoRows);
+                }
             }
             for (DocumentSnapshot doc : rewardDocuments) {
                 String code = doc.getString("code");
-                if (code == null || code.trim().isEmpty() || !"available".equals(doc.getString("status")) || voucherExpired(doc, now)) continue;
+                if (code == null || code.trim().isEmpty() || (promoUsageLoaded[0] && usedPromoCodes.contains(code.trim().toUpperCase(Locale.ROOT)))
+                        || !"available".equals(doc.getString("status")) || voucherExpired(doc, now)) continue;
                 Number percent = (Number) doc.get("percent"), amount = (Number) doc.get("discountAmount"), minimum = (Number) doc.get("minSubtotal");
                 addPromoOption(code, doc.getString("name"), percent == null ? 0 : percent.doubleValue(), amount == null ? 0 : amount.doubleValue(), minimum == null ? 0 : minimum.doubleValue(), promoCodes, promoRows);
             }
+            String selectedCode = promoInput == null ? "" : promoInput.getText().toString().trim().toUpperCase(Locale.ROOT);
+            if (promoUsageLoaded[0] && usedPromoCodes.contains(selectedCode)) promoInput.setText("");
             promoAdapter.notifyDataSetChanged(); updateTotal();
         };
         ListView promoList = new ListView(requireContext());
@@ -178,6 +186,18 @@ public class CartFragment extends Fragment {
                 if (!isAdded()) return;
                 promotionDocuments.clear(); promotionDocuments.addAll(sn.getDocuments()); rebuildPromoOptions.run();
             }).addOnFailureListener(error -> Log.w("CartFragment", "Could not load promotion codes", error));
+
+            db.collection("users").document(uid).collection("voucherUsages").get()
+                    .addOnSuccessListener(snapshot -> {
+                        if (!isAdded()) return;
+                        usedPromoCodes.clear();
+                        for (DocumentSnapshot usage : snapshot.getDocuments()) {
+                            String usedCode = usage.getString("code");
+                            if (usedCode != null && !usedCode.trim().isEmpty()) usedPromoCodes.add(usedCode.trim().toUpperCase(Locale.ROOT));
+                        }
+                        promoUsageLoaded[0] = true;
+                        rebuildPromoOptions.run();
+                    }).addOnFailureListener(error -> Log.w("CartFragment", "Could not load used promo codes", error));
 
             db.collection("users").document(uid).collection("vouchers").whereEqualTo("status", "available").get()
                     .addOnSuccessListener(snapshot -> {

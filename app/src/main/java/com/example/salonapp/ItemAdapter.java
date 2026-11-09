@@ -14,6 +14,7 @@ public class ItemAdapter extends RecyclerView.Adapter<ItemAdapter.VH> {
     private final List<Item> all = new ArrayList<>(), shown = new ArrayList<>();
     private Consumer<Item> onClick, onLong;
     private Consumer<Item> onAddToCart;
+    private Consumer<Item> onBookNow;
     private Consumer<Item> onFavoriteChanged;
     private String favoriteCollection = "products";
     private boolean commerceMode, productMode;
@@ -21,6 +22,7 @@ public class ItemAdapter extends RecyclerView.Adapter<ItemAdapter.VH> {
     public void setOnClick(Consumer<Item> c) { onClick = c; }
     public void setOnLong(Consumer<Item> c) { onLong = c; }
     public void setOnAddToCart(Consumer<Item> c) { onAddToCart = c; }
+    public void setOnBookNow(Consumer<Item> c) { onBookNow = c; }
     public void setOnFavoriteChanged(Consumer<Item> c) { onFavoriteChanged = c; }
     public void setCommerceMode(boolean commerce, boolean products, String collection) {
         commerceMode = commerce; productMode = products; favoriteCollection = collection;
@@ -60,6 +62,9 @@ public class ItemAdapter extends RecyclerView.Adapter<ItemAdapter.VH> {
         }
         h.favorite.setVisibility(commerceMode ? View.VISIBLE : View.GONE);
         h.addToCart.setVisibility(productMode ? View.VISIBLE : View.GONE);
+        boolean serviceMode = favoriteCollection.equals("services");
+        h.bookNow.setVisibility(serviceMode ? View.VISIBLE : View.GONE);
+        h.bookNow.setOnClickListener(v -> { if (onBookNow != null) onBookNow.accept(i); });
         h.favorite.setImageResource(FavoriteStore.contains(h.itemView.getContext(), favoriteCollection, i.id)
                 ? R.drawable.ic_favorite : R.drawable.ic_favorite_border);
         h.favorite.setContentDescription(FavoriteStore.contains(h.itemView.getContext(), favoriteCollection, i.id)
@@ -94,8 +99,8 @@ public class ItemAdapter extends RecyclerView.Adapter<ItemAdapter.VH> {
     static class VH extends RecyclerView.ViewHolder {
         TextView name, desc, price, meta;
         ImageView image;
-        Button map, addToCart;
+        Button map, addToCart, bookNow;
         ImageButton favorite;
-        VH(View v) { super(v); name = v.findViewById(R.id.tvName); desc = v.findViewById(R.id.tvDesc); price = v.findViewById(R.id.tvPrice); meta = v.findViewById(R.id.tvMeta); image = v.findViewById(R.id.ivImage); map = v.findViewById(R.id.btnMap); favorite = v.findViewById(R.id.btnFavorite); addToCart = v.findViewById(R.id.btnAddToCart); }
+        VH(View v) { super(v); name = v.findViewById(R.id.tvName); desc = v.findViewById(R.id.tvDesc); price = v.findViewById(R.id.tvPrice); meta = v.findViewById(R.id.tvMeta); image = v.findViewById(R.id.ivImage); map = v.findViewById(R.id.btnMap); favorite = v.findViewById(R.id.btnFavorite); addToCart = v.findViewById(R.id.btnAddToCart); bookNow = v.findViewById(R.id.btnBookNow); }
     }
 }

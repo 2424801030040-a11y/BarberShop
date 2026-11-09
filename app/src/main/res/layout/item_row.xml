@@ -102,6 +102,19 @@
             </LinearLayout>
 
             <Button
+                android:id="@+id/btnBookNow"
+                android:layout_width="match_parent"
+                android:layout_height="42dp"
+                android:layout_marginTop="10dp"
+                android:backgroundTint="#8D3C32"
+                android:text="Đặt lịch ngay"
+                android:textAllCaps="false"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
+            <Button
                 android:id="@+id/btnAddToCart"
                 android:layout_width="match_parent"
                 android:layout_height="42dp"
