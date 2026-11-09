@@ -95,7 +95,6 @@ public class HairAdvisorFragment extends Fragment {
         page.addView(intro);
         MaterialButton faceScanButton = new MaterialButton(context);
         faceScanButton.setText("Phân tích khuôn mặt để nhận tư vấn");
-        if (!BuildConfig.DEBUG) faceScanButton.setVisibility(View.GONE);
         faceScanButton.setAllCaps(false);
         faceScanButton.setTextSize(13);
         faceScanButton.setMinHeight(dp(40));

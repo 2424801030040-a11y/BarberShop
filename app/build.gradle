@@ -26,8 +26,10 @@ android {
 
     buildTypes {
         release {
-            minifyEnabled true
-            shrinkResources true
+            // MediaPipe's graph initialization inspects Java stack frames; R8
+            // renaming breaks it at runtime in the release APK.
+            minifyEnabled false
+            shrinkResources false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         debug {

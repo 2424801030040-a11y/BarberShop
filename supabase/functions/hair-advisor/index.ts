@@ -23,6 +23,55 @@ function keepCompleteSentences(value: string): string {
   return last?.index === undefined ? text : text.slice(0, last.index + 1).trimEnd();
 }
 
+const HAIR_SYSTEM_PROMPT = "Bạn là thợ tư vấn tóc nam của Chí Phèo Barber Shop tại Sài Gòn. Luôn trả lời bằng tiếng Việt tự nhiên, ngắn gọn và bám sát câu hỏi. Chỉ gợi ý kiểu tóc nam thực tế ở barber shop như textured crop, crew cut, side part, quiff hoặc fade; không gợi ý kiểu tóc nữ. Nêu tối đa 3 lựa chọn, giải thích lý do và gợi ý khách có thể nói gì với thợ. Chỉ dùng danh mục được cung cấp để nói tên dịch vụ, giá, thời lượng và tồn kho; thiếu dữ liệu thì nói rõ. Không giả vờ đã nhìn thấy khách. Không chẩn đoán bệnh hoặc kê thuốc; khi có dấu hiệu bệnh da đầu, khuyên gặp bác sĩ da liễu.";
+
+async function generateWithGemini(contents: JsonRecord[], maxOutputTokens: number): Promise<string> {
+  const apiKey = Deno.env.get("GEMINI_API_KEY")?.trim();
+  if (!apiKey) throw new Error("GEMINI_API_KEY is not configured.");
+  const model = Deno.env.get("GEMINI_MODEL")?.trim() || "gemini-3.5-flash-lite";
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
+    body: JSON.stringify({
+      system_instruction: { parts: [{ text: HAIR_SYSTEM_PROMPT }] },
+      contents,
+      generationConfig: { maxOutputTokens },
+    }),
+    signal: AbortSignal.timeout(75_000),
+  });
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => null);
+    const providerMessage = clean(errorBody?.error?.message, 300);
+    console.error("Gemini request failed", response.status, providerMessage || "No provider message.");
+    if (response.status === 429) throw new HttpError("AI đang bận. Vui lòng thử lại sau ít phút.", 429);
+    throw new HttpError("Chưa kết nối được AI. Vui lòng thử lại sau.", 502);
+  }
+  const result = await response.json();
+  const text = Array.isArray(result?.candidates?.[0]?.content?.parts)
+    ? result.candidates[0].content.parts.map((part: JsonRecord) => typeof part.text === "string" ? part.text : "").join("").trim()
+    : "";
+  if (!text) throw new HttpError("AI chưa tạo được câu trả lời. Vui lòng thử hỏi theo cách khác.", 502);
+  return text;
+}
+
+function classifyFace(body: JsonRecord): string {
+  const aspect = Number(body.face_aspect_ratio);
+  const foreheadJaw = Number(body.forehead_to_jaw_ratio);
+  const jawCheek = Number(body.jaw_to_cheek_ratio);
+  if (foreheadJaw >= 1.16 && foreheadJaw <= 2.5 && jawCheek >= 0.3 && jawCheek < 0.84) return "Heart";
+  if (jawCheek >= 0.88 && jawCheek <= 1.5 && foreheadJaw >= 0.9 && foreheadJaw <= 1.1) return "Square";
+  if (aspect >= 1.7) return "Oblong";
+  if (aspect <= 1.27) return "Round";
+  return "Oval";
+}
+
+function validFaceMeasurements(body: JsonRecord): boolean {
+  return Number.isFinite(Number(body.face_aspect_ratio)) && Number(body.face_aspect_ratio) > 0 && Number(body.face_aspect_ratio) <= 10
+    && Number.isFinite(Number(body.forehead_to_cheek_ratio)) && Number(body.forehead_to_cheek_ratio) > 0 && Number(body.forehead_to_cheek_ratio) <= 10
+    && Number.isFinite(Number(body.jaw_to_cheek_ratio)) && Number(body.jaw_to_cheek_ratio) > 0 && Number(body.jaw_to_cheek_ratio) <= 10
+    && Number.isFinite(Number(body.forehead_to_jaw_ratio)) && Number(body.forehead_to_jaw_ratio) > 0 && Number(body.forehead_to_jaw_ratio) <= 10;
+}
+
 async function shopCatalog(collection: "services" | "products"): Promise<JsonRecord[]> {
   const response = await firestoreRequest(`/${collection}?pageSize=100`);
   if (!response.ok) throw new Error(`Shop catalog read failed (${collection}, HTTP ${response.status}).`);
@@ -39,22 +88,16 @@ Deno.serve(async request => {
   try {
     await verifyUser(request);
     const body = await request.json();
+    if (body?.mode === "face") {
+      if (!validFaceMeasurements(body)) throw new HttpError("Số đo khuôn mặt không hợp lệ. Vui lòng quét lại.", 400);
+      const shape = classifyFace(body);
+      const prompt = `Tỷ lệ hình học trên thiết bị ước tính khuôn mặt khách có dáng ${shape}. Hãy tư vấn 2-3 kiểu tóc nam phù hợp, nêu ngắn lý do và cách dặn thợ. Nói rõ đây là gợi ý tham khảo từ tỷ lệ hình học; hệ thống không gửi hoặc nhìn thấy ảnh. Không suy đoán thêm đặc điểm khuôn mặt.`;
+      const reply = keepCompleteSentences(await generateWithGemini([{ role: "user", parts: [{ text: prompt }] }], 320));
+      return json(request, { answer: reply, reply, face_shape: shape });
+    }
     const message = clean(body?.message, 1200);
     if (!message) throw new HttpError("Hãy nhập câu hỏi hoặc điều bạn muốn thay đổi.", 400);
     const preferences = body?.preferences && typeof body.preferences === "object" ? body.preferences : {};
-    const gatewayUrl = Deno.env.get("HAIR_AI_GATEWAY_URL")?.trim().replace(/\/$/, "");
-    const gatewayToken = Deno.env.get("HAIR_AI_GATEWAY_TOKEN")?.trim();
-    if (!gatewayUrl || !gatewayToken) throw new Error("Hair-advisor gateway is not configured.");
-    // Wake Render's free instance while the shop catalog is being fetched. This
-    // keeps its cold-start delay out of the model request's time window.
-    const gatewayWake = fetch(`${gatewayUrl}/health`, {
-      signal: AbortSignal.timeout(50_000),
-    }).then(response => {
-      if (!response.ok) throw new Error(`Gateway warm-up returned HTTP ${response.status}.`);
-    }).catch(error => {
-      console.warn("Hair-advisor gateway warm-up did not finish before the deadline.",
-        error instanceof Error ? error.name : "Unknown error");
-    });
     const [services, products] = await Promise.all([shopCatalog("services"), shopCatalog("products")]);
     const catalog = {
       services: services.slice(0, 8).map(item => ({ name: clean(item.name, 80), description: clean(item.description, 100), priceVnd: Number(item.price) || 0, durationMinutes: Number(item.durationMinutes) || null })),
@@ -71,45 +114,15 @@ Deno.serve(async request => {
       `Danh mục hiện tại của cửa hàng (giá VND, tồn kho theo lúc truy vấn): ${JSON.stringify(catalog)}`,
       `Chính sách cửa hàng: có thể hủy/đổi lịch trước giờ hẹn tối thiểu 2 giờ; hàng chưa mở có thể trả trong 7 ngày kèm hóa đơn; hàng lỗi hoặc giao sai có thể đổi trong 7 ngày. Chỉ nêu chính sách này khi liên quan.`,
     ].join("\n").slice(0, 3500);
-    const history = Array.isArray(body?.history) ? body.history.slice(-6).flatMap((turn: JsonRecord) => {
+    const history = Array.isArray(body?.history) ? body.history.slice(-8).flatMap((turn: JsonRecord) => {
       const role = turn?.role === "model" ? "model" : turn?.role === "user" ? "user" : "";
       const text = clean(turn?.text, 1200);
-      return role && text ? [{ role, parts: [{ text }] }] : [];
+      return role && text && !(role === "user" && text === message) ? [{ role: role === "model" ? "model" : "user", parts: [{ text }] }] : [];
     }) : [];
-    if (!history.length || history.at(-1)?.role !== "user" || history.at(-1)?.parts?.[0]?.text !== message) {
-      history.push({ role: "user", parts: [{ text: message }] });
-    }
-    const lastUserTurn = history.at(-1);
-    if (lastUserTurn?.role === "user") {
-      lastUserTurn.parts[0].text = context;
-    }
-
-    const gatewayRequest = {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${gatewayToken}` },
-      body: JSON.stringify({ message: context, preferences, history, max_tokens: 420 }),
-    };
-    await gatewayWake;
-    // Keep the combined warm-up and model request below Supabase Free's
-    // 150-second execution limit, including time spent building shop context.
-    const response = await fetch(`${gatewayUrl}/api/chat`, {
-      ...gatewayRequest,
-      signal: AbortSignal.timeout(90_000),
-    });
-    if (!response.ok) {
-      const detail = (await response.text()).slice(0, 1500);
-      console.error("Hair-advisor gateway request failed", response.status, detail);
-      if (response.status === 401) return json(request, { error: "Gateway tư vấn chưa được xác thực đúng cấu hình." }, 502);
-      if (response.status === 429) return json(request, { error: "Máy chủ model đang bận. Hãy thử lại sau ít phút." }, 429);
-      return json(request, { error: "Model Kaggle chưa sẵn sàng hoặc tunnel đã hết hạn. Hãy thử lại sau khi khởi động notebook." }, 502);
-    }
-    const result = await response.json();
-    const answer = keepCompleteSentences((typeof result?.answer === "string" ? result.answer : typeof result?.reply === "string" ? result.reply : "")
+    const contents = [...history, { role: "user", parts: [{ text: context }] }];
+    const answer = keepCompleteSentences((await generateWithGemini(contents, 420))
       .replace(/tóc\s+dài\s+tay/gi, "tóc dài")
       .replace(/cắt theo hình bàn chèn hoặc cái ca lô/gi, "có hai bên gọn và phần đỉnh tạo độ phồng nhẹ"));
-    if (!answer) {
-      return json(request, { error: "Model chưa tạo được câu trả lời. Hãy thử hỏi theo cách khác." }, 502);
-    }
     return json(request, { answer });
   } catch (error) {
     if (error instanceof HttpError) return json(request, { error: error.message }, error.status);

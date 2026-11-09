@@ -154,6 +154,7 @@ public class ChatViewModel extends ViewModel {
             JSONObject payload;
             try {
                 payload = new JSONObject()
+                        .put("mode", "face")
                         .put("face_aspect_ratio", faceAspect)
                         .put("forehead_to_cheek_ratio", foreheadToCheek)
                         .put("jaw_to_cheek_ratio", jawToCheek)
@@ -163,7 +164,7 @@ public class ChatViewModel extends ViewModel {
                 errorMessage.setValue("Không thể tạo yêu cầu phân tích khuôn mặt.");
                 return;
             }
-            SupabaseFunctions.postFaceConsultGateway(payload, (result, requestError) -> {
+            SupabaseFunctions.post(application, "hair-advisor", payload, (result, requestError) -> {
                 if (requestError != null || result == null) {
                     sending.setValue(false);
                     errorMessage.setValue(requestError == null

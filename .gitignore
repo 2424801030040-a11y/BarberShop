@@ -24,6 +24,4 @@ seed/node_modules/
 .env.*
 !.env.example
 
-ai-training/fused_model/
-ai-training/qwen_barbershop_lora/
 .venv/

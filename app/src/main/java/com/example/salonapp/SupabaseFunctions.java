@@ -34,45 +34,6 @@ final class SupabaseFunctions {
             .addOnFailureListener(error -> callback.onComplete(null, "Không xác thực được tài khoản. Vui lòng đăng nhập lại."));
     }
 
-    /** Calls the lightweight Render gateway for chat and face consultations. */
-    static void postHairAdvisorGateway(JSONObject payload, Callback callback) {
-        postHairGateway(payload, Config.HAIR_AI_CHAT_URL, callback);
-    }
-
-    /** Sends only facial geometry ratios to Render; image pixels remain on-device. */
-    static void postFaceConsultGateway(JSONObject payload, Callback callback) {
-        postHairGateway(payload, Config.HAIR_AI_FACE_URL, callback);
-    }
-
-    private static void postHairGateway(JSONObject payload, String endpoint, Callback callback) {
-        new Thread(() -> {
-            JSONObject result = null;
-            String error = null;
-            try {
-                Request request = new Request.Builder()
-                    .url(endpoint)
-                    .post(RequestBody.create(payload.toString(), JSON))
-                    .build();
-                try (Response response = HAIR_AI_CLIENT.newCall(request).execute()) {
-                    String body = response.body() == null ? "{}" : response.body().string();
-                    result = new JSONObject(body);
-                    if (!response.isSuccessful()) {
-                        if (endpoint.equals(Config.HAIR_AI_FACE_URL) && response.code() == 422) {
-                            error = "Chưa đo được khuôn mặt chính xác. Vui lòng đặt trọn khuôn mặt vào khung và quét lại.";
-                        } else {
-                            error = result.optString("detail", result.optString("error", "Máy chủ tư vấn tóc báo lỗi (HTTP " + response.code() + ")."));
-                        }
-                    }
-                }
-            } catch (IOException | org.json.JSONException exception) {
-                error = "Không kết nối được máy chủ tư vấn tóc trên Render. Vui lòng kiểm tra kết nối mạng hoặc thử lại sau.";
-            }
-            JSONObject answer = result;
-            String failure = error;
-            MAIN.post(() -> callback.onComplete(answer, failure));
-        }).start();
-    }
-
     private static void request(String function, JSONObject payload, GetTokenResult token, Callback callback) {
         JSONObject result = null;
         String error = null;

@@ -1,13 +1,13 @@
 # Chí Phèo BarberShop
 
-Vietnamese barber shop customer app and admin dashboard. The repository contains an Android app, a Firebase Hosting admin site, Supabase Edge Functions, and a local MLX hair-consultation server.
+Vietnamese barber shop customer app and admin dashboard. The repository contains an Android app, a Firebase Hosting admin site, and Supabase Edge Functions.
 
 ## Components
 
-- **Android app** (`app/`): Java, XML, Material Components, AndroidX, Firebase Authentication, Cloud Firestore, Firebase Cloud Messaging, and WorkManager. The app supports email/password and Google sign-in, appointment booking and management, product browsing and checkout, saved addresses, favorites, notifications, promotions, points and vouchers, product/service reviews, and a Vietnamese hair-advisor chat. In debug builds, face scanning uses the MediaPipe Face Landmarker on-device and sends only geometric ratios to the local consultation server; it does not upload face images.
+- **Android app** (`app/`): Java, XML, Material Components, AndroidX, Firebase Authentication, Cloud Firestore, Firebase Cloud Messaging, and WorkManager. The app supports email/password and Google sign-in, appointment booking and management, product browsing and checkout, saved addresses, favorites, notifications, promotions, points and vouchers, product/service reviews, and a Vietnamese hair-advisor chat. Face scanning uses the MediaPipe Face Landmarker on-device and sends only geometric ratios to the authenticated Supabase function; it does not upload face images.
 - **Admin dashboard** (`admin/`): responsive Vietnamese web app hosted on Firebase Hosting. Firebase Authentication and Firestore Security Rules protect catalog, branches, stylists, promotions, reward vouchers, shop events, customers, reviews, orders, appointments, and contact requests. Firebase Auth user roles and account status are managed server-side through `manage-staff`.
 - **Supabase Edge Functions** (`supabase/functions/`): trusted operations for appointments, order creation and inventory, staff status changes, bank-transfer verification, unpaid-order expiry, loyalty redemption, event notifications, contact replies, hair-advisor responses, and staff account management. Functions verify Firebase ID tokens or the SePay HMAC signature as appropriate. Firebase service-account credentials belong in Supabase Secrets only.
-- **AI inference** (`ai-training/`): `kaggle_inference.ipynb` starts the fused Qwen model from the Kaggle dataset on a temporary Kaggle GPU session and exposes authenticated `/api/chat` and `/api/consult-face` routes through a Cloudflare quick tunnel. Render (`main.py`) acts as the public gateway and proxies to that temporary model endpoint. The authenticated Supabase `hair-advisor` function calls Render for app chat. The Kaggle notebook must remain running; its tunnel URL changes between sessions.
+- **AI inference**: the authenticated Supabase `hair-advisor` function calls Gemini directly for chat and for haircut advice after face scanning. The Gemini API key stays in Supabase Secrets. Face scanning and measurement remain on-device with MediaPipe; only the resulting geometry ratios are sent to Supabase, never the face image.
 - **Data and project configuration**: Firestore rules and indexes are in the repository root. `seed/seed.js` inserts sample Vietnamese services, branches, stylists, products, and promotions. `scripts/set-staff-claim.js` is a trusted-machine bootstrap tool for initial Firebase custom claims.
 
 ## Main workflows
@@ -22,9 +22,5 @@ Vietnamese barber shop customer app and admin dashboard. The repository contains
 
 - Open the repository in Android Studio with JDK 17 and Android SDK 34 installed. Add the Firebase `google-services.json` file to `app/`, sync Gradle, and run the `app` debug variant. Build from the repository root with `./gradlew assembleDebug` (Windows: `gradlew.bat assembleDebug`).
 - Configure and deploy Firebase Hosting, Firestore rules/indexes, and Supabase Edge Functions in their respective consoles/CLIs. The Android and admin files contain public client configuration only; never put Firebase service-account JSON, private keys, Supabase secret/service-role keys, or SePay secrets in the app or website.
-- To run app chat through the Kaggle model, upload `ai-training/kaggle_inference.ipynb` to Kaggle, attach the `chipheo-barbershop-ai` dataset, enable Internet and a GPU, and run all cells. Set the printed tunnel URL and the same Kaggle inference token in Render. Configure `APP_GATEWAY_TOKEN` in Render and set the matching `HAIR_AI_GATEWAY_URL` and `HAIR_AI_GATEWAY_TOKEN` Supabase secrets, then deploy the `hair-advisor` function. The free Kaggle runtime is temporary; the notebook must remain active and a new URL must be copied to Render after each session restart.
-- `seed/serviceAccountKey.json` and `ai-training/serviceAccountKey.json`, if present locally, are ignored credential files. Keep them private and rotate them if they have ever been shared.
-
-## External model attribution
-
-The bundled fused model is based on **Qwen2.5-1.5B-Instruct**, distributed under Apache-2.0. The bundled LoRA adapter is project-specific. Review the upstream model license and applicable model terms before redistributing model weights.
+- To enable app chat and face-scan advice, create a Gemini API key and store it with `supabase secrets set GEMINI_API_KEY=...`, then deploy the function with `supabase functions deploy hair-advisor`. The optional `GEMINI_MODEL` secret selects a model; the default is `gemini-3.5-flash-lite`.
+- `seed/serviceAccountKey.json` and other local `serviceAccountKey*.json` files are ignored credential files. Keep them private and rotate them if they have ever been shared.
